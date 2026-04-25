@@ -89,7 +89,7 @@ The `.carthage/config.toml` schema (v1) looks like:
 [carthage]
 version          = "1"         # config schema version
 base_image_tag   = "v1"        # carthage-base major this project targets
-annexed_with_cli = "1.0.0"     # informational; what CLI did the annex
+annexed_with_cli = "1.0.1"     # informational; what CLI did the annex
 service_name     = "dev"
 project_slug     = "my-project"
 ```

@@ -1,6 +1,6 @@
 ---
 name: carthage-annex
-version: "1.0.0"
+version: "1.0.1"
 description: Use when the user wants to bring a project into the Carthage sandboxed dev-environment workflow. Trigger phrases include "annex this project into carthage", "carthage-annex", "set up carthage for this repo", "make this project carthage-compatible", "bring this repo into carthage", and "/carthage-annex". Generates `.carthage/` config for a new or existing project so the user can run `carthage up && carthage attach` to get a sandboxed Claude Code session.
 ---
 
@@ -21,9 +21,14 @@ After this, the user runs `carthage up && carthage attach` on the host to start 
 
 If the user passed `--upgrade` (or asked to re-run annex against a project that already has `.carthage/` populated):
 
-- **Don't** regenerate everything — preserve the user's compose customizations.
-- Add any new features (e.g., a new service they want) by diffing the current file with what your template would produce and proposing targeted edits.
-- *Note:* full `--upgrade` support is reserved for a future carthage version. In v1.0.0, treat `--upgrade` as "show a diff, ask if I should overwrite each file." If the user wants richer behavior, tell them it's coming in a later release.
+1. **Read [CHANGELOG.md](CHANGELOG.md)** (lives next to this SKILL.md, shipped in the wheel). Read the project's `.carthage/config.toml` to get its `annexed_with_cli` value.
+2. **Surface every changelog entry strictly newer than `annexed_with_cli`** to the user, in chronological order. For each entry, print the version, the date, the user-facing summary, and any "Migration for existing projects" notes. This is the *narrative* that a raw diff can't convey.
+3. **Then** propose targeted edits: diff the project's current `.carthage/` files against what the templates would produce now, and ask file-by-file whether to apply. Preserve the user's customizations — never blanket-overwrite. If a section has been hand-edited and the template also changed it, flag the conflict and let the user pick.
+4. After the user accepts the edits, update `annexed_with_cli` in `.carthage/config.toml` to the current CLI version so the *next* `--upgrade` only shows entries newer than this run.
+
+Notes:
+- If `annexed_with_cli` is missing or unparseable, treat it as "show every changelog entry."
+- Full structured `--upgrade` (auto-merge with conflict resolution per file section) is reserved for a future release. The current implementation is "narrate from the changelog, then diff each file."
 
 Otherwise, proceed with a fresh annex (steps 2 onward).
 
@@ -69,7 +74,7 @@ Templates live alongside this skill at `templates/`. Render them with the values
 - **`.carthage/config.toml`** — from `carthage-config.toml.j2`. Fields:
   - `version = "1"` (schema version)
   - `base_image_tag = "v1"` (the `carthage-base` major to target)
-  - `annexed_with_cli = "1.0.0"` (informational)
+  - `annexed_with_cli = "1.0.1"` (informational; whatever CLI version did the annex)
   - `service_name = "dev"`
   - `project_slug` — derive from project directory name, lowercase, replace non-alnum with `-`.
 
