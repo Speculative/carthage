@@ -1,0 +1,2 @@
+# Build context for carthage-base is the `base/` directory itself.
+# Nothing to exclude today; keep the file so future additions have a home.

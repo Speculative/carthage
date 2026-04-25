@@ -1,0 +1,53 @@
+name: carthage-py-http-server
+
+x-carthage-labels: &carthage_labels
+  carthage.managed: "true"
+  carthage.project: "py-http-server"
+
+services:
+  dev:
+    build:
+      context: ..
+      dockerfile: .carthage/Dockerfile
+      args:
+        HOST_UID: ${HOST_UID:-1000}
+        HOST_GID: ${HOST_GID:-1000}
+    image: carthage-py-http-server:latest
+    working_dir: /workspace
+    init: true
+    tty: true
+    stdin_open: true
+
+    labels:
+      <<: *carthage_labels
+      carthage.role: "dev"
+
+    cap_drop: [ALL]
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 1000
+    mem_limit: ${CARTHAGE_MEM_LIMIT:-0}
+    cpus: ${CARTHAGE_CPUS:-0}
+
+    environment:
+      CARTHAGE: "1"
+
+    volumes:
+      - ..:/workspace:rw
+      - ${HOME}/.claude:/home/carthage/.claude:rw
+      - ${HOME}/.gitconfig:/home/carthage/.gitconfig:ro
+
+    ports:
+      - "18000:8000"        # E2E test A: host-side curl on localhost:18000
+
+    networks:
+      - carthage-net
+
+networks:
+  carthage-net:
+    driver: bridge

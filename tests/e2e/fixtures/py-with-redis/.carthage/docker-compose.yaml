@@ -1,0 +1,64 @@
+name: carthage-py-with-redis
+
+x-carthage-labels: &carthage_labels
+  carthage.managed: "true"
+  carthage.project: "py-with-redis"
+
+services:
+  dev:
+    build:
+      context: ..
+      dockerfile: .carthage/Dockerfile
+      args:
+        HOST_UID: ${HOST_UID:-1000}
+        HOST_GID: ${HOST_GID:-1000}
+    image: carthage-py-with-redis:latest
+    working_dir: /workspace
+    init: true
+    tty: true
+    stdin_open: true
+
+    labels:
+      <<: *carthage_labels
+      carthage.role: "dev"
+
+    cap_drop: [ALL]
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 1000
+    mem_limit: ${CARTHAGE_MEM_LIMIT:-0}
+    cpus: ${CARTHAGE_CPUS:-0}
+
+    environment:
+      CARTHAGE: "1"
+
+    volumes:
+      - ..:/workspace:rw
+      - ${HOME}/.claude:/home/carthage/.claude:rw
+      - ${HOME}/.gitconfig:/home/carthage/.gitconfig:ro
+
+    depends_on:
+      - redis
+
+    networks:
+      - carthage-net
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "no"]
+    labels:
+      <<: *carthage_labels
+      carthage.role: "redis"
+    # No `ports:` — redis is reachable from `dev` over the compose network,
+    # but NOT from the host. Test B verifies this.
+    networks:
+      - carthage-net
+
+networks:
+  carthage-net:
+    driver: bridge
