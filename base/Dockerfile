@@ -96,6 +96,12 @@ COPY entrypoint.sh /usr/local/bin/carthage-entrypoint
 RUN chmod 0755 /usr/local/bin/carthage-entrypoint \
  && chmod 0644 /etc/carthage/SANDBOX.md
 
+# --- tmux config -----------------------------------------------------------
+# Status bar reads $CARTHAGE_PROJECT (set by compose); falls back to a
+# placeholder so a bare `docker run` still renders.
+COPY --chown=carthage:carthage tmux.conf /home/carthage/.tmux.conf
+RUN chmod 0644 /home/carthage/.tmux.conf
+
 WORKDIR /workspace
 USER carthage
 

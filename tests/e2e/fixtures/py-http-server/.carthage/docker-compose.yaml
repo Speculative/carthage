@@ -36,10 +36,12 @@ services:
 
     environment:
       CARTHAGE: "1"
+      CARTHAGE_PROJECT: "py-http-server"
 
     volumes:
       - ..:/workspace:rw
       - ${HOME}/.claude:/home/carthage/.claude:rw
+      - ${HOME}/.claude.json:/home/carthage/.claude.json:rw
       - ${HOME}/.gitconfig:/home/carthage/.gitconfig:ro
 
     ports:
