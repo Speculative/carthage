@@ -49,6 +49,27 @@ def read_skill_version(name: str) -> str | None:
     return m.group(1).strip() if m else None
 
 
+def find_drifted_skills(cli_version: str) -> list[tuple[str, str | None]]:
+    """Return `(name, on_disk_version)` for installed skills whose version
+    doesn't match `cli_version`. Skills that aren't installed at all are
+    *not* drift — they require `carthage fortify` to install in the first
+    place, but that's a separate concern. The preamble warning is for users
+    who have a working install that's gone stale, not for first-time setup.
+
+    A skill present without a parseable `version:` field counts as drift
+    (`on_disk_version=None`) — the file exists but we can't tell what it is,
+    which usually means a hand-edit broke the frontmatter.
+    """
+    drifted: list[tuple[str, str | None]] = []
+    for name in MANAGED_SKILLS:
+        if not skill_path(name).is_file():
+            continue
+        ver = read_skill_version(name)
+        if ver != cli_version:
+            drifted.append((name, ver))
+    return drifted
+
+
 def installed_skills() -> list[tuple[str, str | None]]:
     """Return `(name, version)` for each managed skill currently on disk.
 
