@@ -96,12 +96,15 @@ project_slug     = "my-project"
 
 ### Upgrade flow
 
-1. `uv tool upgrade carthage-cli` — installs the new CLI.
-2. `carthage fortify` — re-installs skills at the version matching the new CLI. Required; not automatic.
-3. If the config schema changed: `/carthage-migrate` per project, when you want to opt in. (In v1 there's no migration yet; the command is reserved.)
-4. If the `carthage-base` major changed: edit `base_image_tag` in `.carthage/config.toml` and the `FROM` line in `.carthage/Dockerfile`, then `carthage build`.
+There are several upgrade paths because the three artifacts (CLI, base image, in-project templates) are consumed independently. A typical full upgrade does steps 1–4; step 5 is only needed across major versions.
 
-`carthage survey` surfaces version-alignment issues across all four axes (CLI, skills, project schema, Dockerfile `FROM`).
+1. **CLI** — `uv tool upgrade carthage-cli`. Installs the new CLI binary on the host.
+2. **Skills** — `carthage fortify`. Re-installs `~/.claude/skills/carthage-annex` from the new wheel. Required after every CLI upgrade; not automatic.
+3. **Per-project templates** — in each annexed project, run `/carthage-annex --upgrade` from a Claude Code session. The skill reads its bundled `CHANGELOG.md`, surfaces every entry newer than the project's `annexed_with_cli`, then proposes file-by-file diffs against your committed `.carthage/`. This is how an existing project picks up template changes (new mounts, new env vars, new hardening defaults). Without this step, your committed compose file stays frozen at whatever template was current when you originally annexed.
+4. **Base image, within a major** — `carthage build --pull` from the project root. The `:v1` tag on GHCR moves forward as we publish minor/patch base-image releases (e.g., new tooling, default config files); `--pull` is what forces Docker to fetch the moved tag instead of using its cached digest. Without `--pull` you stay on whatever `:v1` resolved to last time.
+5. **Base image, across majors** — edit the `FROM` line in `.carthage/Dockerfile` (the source of truth — `base_image_tag` in `.carthage/config.toml` is informational and should be updated as a courtesy), then `carthage build`. Major bumps may require code or config changes; the `carthage-base` release notes will say. (`/carthage-migrate` will eventually orchestrate this; reserved in v1.)
+
+`carthage survey` surfaces version-alignment drift across all of these axes (CLI, skills, project schema, Dockerfile `FROM`).
 
 ## Troubleshooting
 
