@@ -88,7 +88,13 @@ def up(force_rebuild: bool, no_host_ports: bool, port_overrides: tuple[str, ...]
             console.print(f"[red]build failed[/red] (exit {exc.returncode})")
             sys.exit(exc.returncode)
         expected_hash = image.compute_expected_hash(cfg)
-        _tag_service_image(cfg, expected_hash)
+        ok, detail = image.tag_built_service_image(cfg, expected_hash)
+        if not ok:
+            console.print(
+                f"[yellow]warning:[/yellow] could not tag image as "
+                f"{cfg.project_image_repo}:{expected_hash} ({detail}); "
+                "the staleness check will trigger another rebuild next run."
+            )
         image.write_last_build_hash(cfg, expected_hash)
     else:
         console.print(f"[green]image current[/green] (hash={expected_hash})")
@@ -229,17 +235,3 @@ def _check_port_collisions(cfg: CarthageConfig, compose_args: list[str]) -> None
     raise subprocess.CalledProcessError(1, "port-collision")
 
 
-def _tag_service_image(cfg, expected_hash: str) -> None:
-    try:
-        result = compose.run(
-            cfg, ["images", "-q", cfg.service_name], capture=True,
-        )
-        lines = [line for line in result.stdout.strip().splitlines() if line]
-        if not lines:
-            return
-        subprocess.run(
-            ["docker", "tag", lines[0], f"{cfg.project_image_repo}:{expected_hash}"],
-            check=True,
-        )
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        pass

@@ -44,31 +44,14 @@ def build(no_cache: bool, pull: bool) -> None:
     new_hash = image.compute_expected_hash(cfg)
     image.write_last_build_hash(cfg, new_hash)
 
-    # Also tag the freshly-built service image as carthage-<slug>:<hash> so
-    # the staleness check can find it by name next time.
-    service_image = f"carthage-{cfg.project_slug}:latest"
-    tagged = f"{cfg.project_image_repo}:{new_hash}"
-    # Compose names the image after the project + service by default; find it
-    # via `docker compose images --quiet`.
-    try:
-        result = compose.run(
-            cfg,
-            ["images", "-q", cfg.service_name],
-            capture=True,
-        )
-        image_id = result.stdout.strip().splitlines()[0] if result.stdout.strip() else None
-        if image_id:
-            subprocess.run(
-                ["docker", "tag", image_id, tagged],
-                check=True,
-            )
-            console.print(f"[green]tagged[/green] {tagged}")
-    except (subprocess.CalledProcessError, IndexError):
-        # Non-fatal: the hash file is the authority, the tag is a convenience.
+    ok, detail = image.tag_built_service_image(cfg, new_hash)
+    if ok:
+        console.print(f"[green]tagged[/green] {detail}")
+    else:
         console.print(
-            f"[yellow]warning:[/yellow] could not tag image as {tagged}; "
-            "staleness check will rebuild next time."
+            f"[yellow]warning:[/yellow] could not tag image as "
+            f"{cfg.project_image_repo}:{new_hash} ({detail}); "
+            "the staleness check will rebuild next time."
         )
 
     console.print(f"[green]build complete.[/green] hash={new_hash}")
-    _ = service_image  # reserved for future: tag by :latest for discoverability

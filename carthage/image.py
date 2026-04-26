@@ -203,6 +203,39 @@ def local_image_exists(repo: str, tag: str) -> bool:
         return False
 
 
+def tag_built_service_image(cfg: CarthageConfig, expected_hash: str) -> tuple[bool, str]:
+    """Tag `<project_image_repo>:latest` as `<project_image_repo>:<hash>`.
+
+    Returns (ok, detail). The `:latest` tag is what compose writes to during
+    `build`; the `:<hash>` tag is what the staleness check looks for. Without
+    this, `local_image_exists(repo, expected_hash)` is always False after a
+    rebuild and `carthage status` perpetually reports "rebuild needed".
+
+    We deliberately do NOT use `docker compose images -q <service>` here —
+    immediately after a fresh `build` (before the next `up -d`), compose's
+    internal state still references the *old* image ID and `images -q`
+    returns `Error: No such image: sha256:...` with rc=1. Inspecting the
+    repo:latest tag directly sidesteps that compose-state quirk.
+    """
+    src = f"{cfg.project_image_repo}:latest"
+    dst = f"{cfg.project_image_repo}:{expected_hash}"
+    try:
+        inspect = subprocess.run(
+            ["docker", "image", "inspect", src, "--format", "{{.Id}}"],
+            capture_output=True, text=True, check=True,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+        return False, f"could not inspect {src}: {exc}"
+    image_id = inspect.stdout.strip()
+    if not image_id:
+        return False, f"no Id returned for {src}"
+    try:
+        subprocess.run(["docker", "tag", image_id, dst], check=True)
+    except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+        return False, f"docker tag failed: {exc}"
+    return True, dst
+
+
 def read_last_build_hash(cfg: CarthageConfig) -> str | None:
     try:
         return cfg.last_build_hash_file.read_text().strip() or None
