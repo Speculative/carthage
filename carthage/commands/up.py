@@ -64,6 +64,17 @@ def up(force_rebuild: bool, no_host_ports: bool, port_overrides: tuple[str, ...]
     # Validate port-override syntax early (fail before doing any work).
     overrides = _parse_overrides(port_overrides)
 
+    # --- Refresh base image so digest drift is visible to the hash check ---
+    # `compute_expected_hash` reads the base image's digest from the local
+    # cache; without this pull, an upstream `:vN` rebuild looks like a no-op
+    # to the staleness check and the user runs an old base indefinitely.
+    ok, detail = image.pull_base_image(cfg.base_image)
+    if not ok:
+        console.print(
+            f"[yellow]note:[/yellow] could not refresh {cfg.base_image} ({detail}); "
+            "using local cache. Run `carthage build --pull` once you're online."
+        )
+
     # --- Build (conditionally) ---
     expected_hash = image.compute_expected_hash(cfg)
     have_image = image.local_image_exists(cfg.project_image_repo, expected_hash)

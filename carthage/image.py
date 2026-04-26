@@ -134,6 +134,29 @@ def compute_expected_hash(cfg: CarthageConfig) -> str:
     ).hash()
 
 
+def pull_base_image(image_ref: str) -> tuple[bool, str]:
+    """Best-effort `docker pull` for the base image.
+
+    Returns (ok, detail). ok=False on network/registry errors — callers should
+    soft-fail (fall through to the local cache) rather than abort, so users
+    without network can still bring containers up. The pull is not just a
+    convenience: `compute_expected_hash` mixes the base image's repo digest
+    into the hash, and reads it from the *local* cache. Without this pull,
+    drift in the upstream `:vN` tag is invisible to the staleness check.
+    """
+    try:
+        r = subprocess.run(
+            ["docker", "pull", "--quiet", image_ref],
+            capture_output=True, text=True,
+        )
+    except FileNotFoundError:
+        return False, "docker not on PATH"
+    if r.returncode != 0:
+        tail = (r.stderr.strip() or r.stdout.strip()).splitlines()
+        return False, tail[-1] if tail else f"exit {r.returncode}"
+    return True, image_ref
+
+
 def get_base_image_digest(image_ref: str) -> str:
     """Return a stable identifier for the base image.
 
