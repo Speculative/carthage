@@ -53,6 +53,7 @@ def _status_all() -> None:
     table.add_column("state")
     table.add_column("uptime")
     table.add_column("host ports")
+    table.add_column("base img")  # OCI version label recorded at `up` time
 
     for line in lines:
         try:
@@ -67,7 +68,17 @@ def _status_all() -> None:
         ports = row.get("Ports", "") or "-"
         # Trim bind addresses for display: "0.0.0.0:3000->3000/tcp" → "3000→3000/tcp"
         ports = _format_ports(ports)
-        table.add_row(project, role, state, status_str, ports)
+        # Only `dev` containers carry the base-image version label; for
+        # sidecars (postgres, redis, …) leave the cell blank rather than
+        # printing a confusing "?".
+        base_version = labels.get("carthage.base-image-version") if role == "dev" else None
+        if base_version:
+            base_cell = f"v{base_version}"
+        elif role == "dev":
+            base_cell = "[dim]unknown[/dim]"  # pre-v1.1.0 container
+        else:
+            base_cell = ""
+        table.add_row(project, role, state, status_str, ports, base_cell)
 
     console.print(table)
 
@@ -156,6 +167,29 @@ def _status_current() -> None:
         table.add_row("image", f"[red]hash failed: {exc}[/red]")
 
     table.add_row("base image", cfg.base_image)
+
+    # Running container's recorded base-image version vs what's now locally
+    # cached. Three states:
+    #   - both populated and equal → green "current"
+    #   - both populated but different → yellow "stale, run `carthage up`"
+    #   - container running but no recorded version → "unknown (pre-v1.1.0)"
+    #   - no container running → omit the row
+    running_version = image.read_running_dev_container_base_version(cfg.compose_project_name)
+    if running_version is not None:
+        latest_version = image.get_base_image_version(cfg.base_image)
+        if not running_version:
+            row = "[dim]unknown[/dim] (container annexed before v1.1.0)"
+        elif latest_version and running_version == latest_version:
+            row = f"[green]current[/green] (v{running_version})"
+        elif latest_version:
+            row = (
+                f"[yellow]stale[/yellow] (running v{running_version}, "
+                f"latest v{latest_version} — `carthage up` to refresh)"
+            )
+        else:
+            row = f"v{running_version} (couldn't read latest from {cfg.base_image})"
+        table.add_row("running base", row)
+
     table.add_row("config schema", cfg.version + (
         " [yellow](outdated — run /carthage-migrate)[/yellow]" if cfg.schema_is_outdated else ""
     ))

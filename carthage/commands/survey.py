@@ -17,6 +17,7 @@ Checks performed:
   - (if inside a project) base image pullable
   - (if inside a project) config schema is readable by this CLI
   - (if inside a project) base image major in Dockerfile still supported
+  - (if inside a project, container running) base image version current
   - (if --deep) spins up a test container, probes Claude auth
 """
 
@@ -162,6 +163,29 @@ def check_config_schema(cfg) -> tuple[bool, str]:
     return True, f"schema '{cfg.version}' (current)"
 
 
+@_check("running container's base image is current")
+def check_running_container_base_fresh(cfg) -> tuple[bool, str]:
+    """Compare the running dev container's recorded base-image version
+    against the OCI version label on what's now locally cached. Reports
+    a soft pass when nothing is running (nothing to be stale) or when
+    the container pre-dates v1.1.0 (no label to compare against)."""
+    from carthage import image as _image
+    running = _image.read_running_dev_container_base_version(cfg.compose_project_name)
+    if running is None:
+        return True, "no dev container running (nothing to compare)"
+    if running == "":
+        return True, "container pre-dates v1.1.0 — no version label to compare"
+    latest = _image.get_base_image_version(cfg.base_image)
+    if latest is None:
+        return True, f"running v{running}; couldn't read latest from {cfg.base_image}"
+    if running == latest:
+        return True, f"running v{running} (matches local {cfg.base_image})"
+    return False, (
+        f"running v{running}, but {cfg.base_image} is now v{latest} — "
+        "run `carthage up` to refresh"
+    )
+
+
 @_check("project Dockerfile FROM tag supported")
 def check_dockerfile_base(cfg) -> tuple[bool, str]:
     """Read the `FROM` line and see if it matches cfg.base_image_tag."""
@@ -244,6 +268,8 @@ def survey(deep: bool, base_image: str | None) -> None:
     if cfg is not None:
         results.append(check_config_schema(cfg))
         results.append(check_dockerfile_base(cfg))
+        if docker_up:
+            results.append(check_running_container_base_fresh(cfg))
 
     if docker_up:
         results.append(check_base_image_pullable(base_image))

@@ -21,6 +21,7 @@ services:
     labels:
       <<: *carthage_labels
       carthage.role: "dev"
+      carthage.base-image-version: "${CARTHAGE_BASE_IMAGE_VERSION:-}"
 
     cap_drop: [ALL]
     cap_add:

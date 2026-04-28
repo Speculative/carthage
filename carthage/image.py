@@ -191,6 +191,74 @@ def get_base_image_digest(image_ref: str) -> str:
     return f"unpulled:{image_ref}"
 
 
+def get_base_image_version(image_ref: str) -> str | None:
+    """Return the OCI `org.opencontainers.image.version` label of the base
+    image, e.g. "1.1.0". Returns None if the image isn't pulled, or if it
+    pre-dates v1.1.0 (when we started setting the label in publish-base.yml).
+
+    The compose env var `CARTHAGE_BASE_IMAGE_VERSION` propagates this onto
+    the running container's `carthage.base-image-version` label so `status`
+    can compare the running container's recorded version against whatever
+    is now locally cached for the base ref.
+    """
+    try:
+        result = subprocess.run(
+            ["docker", "image", "inspect", image_ref,
+             "--format", '{{ index .Config.Labels "org.opencontainers.image.version" }}'],
+            capture_output=True, check=True, text=True,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+    out = result.stdout.strip()
+    # `--format` returns "<no value>" when the label is absent; treat as None.
+    if not out or out == "<no value>":
+        return None
+    return out
+
+
+def read_running_dev_container_base_version(compose_project_name: str) -> str | None:
+    """Inspect the running `dev` service container for the project and return
+    the value of the `carthage.base-image-version` label (set at `up` time
+    from the base image's OCI version label).
+
+    Return semantics:
+      - Specific version string (e.g. "1.1.0") — record found and populated.
+      - "" (empty string) — container exists, label is present but empty.
+        Means up was run against a base image without the OCI version label
+        (pre-v1.1.0 base images, or a manually-built image that didn't set
+        it).
+      - None — no running dev container, or label is absent (container
+        annexed pre-v1.1.0 and never re-upped — compose file has no label
+        line at all).
+    """
+    r = subprocess.run(
+        ["docker", "ps", "-a",
+         "--filter", f"label=carthage.project={compose_project_name.removeprefix('carthage-')}",
+         "--filter", "label=carthage.role=dev",
+         "--format", "{{.ID}}"],
+        capture_output=True, text=True,
+    )
+    if r.returncode != 0:
+        return None
+    container_ids = [cid for cid in r.stdout.splitlines() if cid.strip()]
+    if not container_ids:
+        return None
+    cid = container_ids[0]
+    r = subprocess.run(
+        ["docker", "inspect", cid,
+         "--format", '{{ index .Config.Labels "carthage.base-image-version" }}'],
+        capture_output=True, text=True,
+    )
+    if r.returncode != 0:
+        return None
+    out = r.stdout.strip()
+    if out == "<no value>":
+        # Label key absent on the container — annexed pre-v1.1.0.
+        return None
+    # Either a real version string or "" (label present but empty).
+    return out
+
+
 def local_image_exists(repo: str, tag: str) -> bool:
     try:
         subprocess.run(

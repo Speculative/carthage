@@ -32,6 +32,12 @@ services:
     labels:
       <<: *carthage_labels
       carthage.role: "dev"
+      # Stamp of the base-image version this container was launched against,
+      # resolved by the CLI at `up` time from the OCI label on the locally-
+      # cached base image. `carthage status` reads this back to flag
+      # "running container is older than the base image now on disk."
+      # Empty when the base image pre-dates v1.1.0 (no OCI label set).
+      carthage.base-image-version: "${CARTHAGE_BASE_IMAGE_VERSION:-}"
 
     # Hardening — see README "Security model" for the full rationale.
     # NET_ADMIN is intentionally absent: Carthage doesn't try to firewall

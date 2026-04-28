@@ -25,6 +25,12 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 # tag means we don't clobber any manually-pulled ghcr.io/speculative/carthage-base.
 E2E_BASE_TAG = "carthage-base:e2e"
 
+# Synthetic OCI version label baked into the e2e build. Must NOT match a real
+# carthage-base release tag — tests that re-tag the image to simulate a newer
+# release rely on this being a sentinel value. Bump only if you're testing
+# that real version comparison works.
+E2E_BASE_OCI_VERSION = "0.0.0-e2e"
+
 
 def _docker_available() -> bool:
     try:
@@ -42,10 +48,18 @@ def _require_docker() -> None:
 
 @pytest.fixture(scope="session")
 def base_image() -> str:
-    """Build `carthage-base:e2e` once per session and return the tag."""
+    """Build `carthage-base:e2e` once per session and return the tag.
+
+    Note the `--label org.opencontainers.image.version=...`: in production
+    the publish-base.yml workflow sets this. Locally `docker build` doesn't
+    set it by default, so we have to do it explicitly or the
+    base-image-version test infra (status/survey) can't exercise the
+    populated-version code path.
+    """
     cmd = [
         "docker", "build",
         "-t", E2E_BASE_TAG,
+        "--label", f"org.opencontainers.image.version={E2E_BASE_OCI_VERSION}",
         "--build-arg", f"HOST_UID={os.getuid()}",
         "--build-arg", f"HOST_GID={os.getgid()}",
         str(BASE_DIR),

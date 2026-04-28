@@ -40,9 +40,11 @@ jobs:
             *) echo "::error::version '$version' is not vN.N.N"; exit 1;;
           esac
           major="${version%%.*}"          # v1.2.3 -> v1
+          semver="${version#v}"           # v1.2.3 -> 1.2.3 (for OCI labels)
           image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/carthage-base"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "major=$major"     >> "$GITHUB_OUTPUT"
+          echo "semver=$semver"   >> "$GITHUB_OUTPUT"
           echo "image=$image"     >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU (for arm64 builds on amd64 runners)
@@ -69,5 +71,12 @@ jobs:
             ${{ steps.tags.outputs.image }}:${{ steps.tags.outputs.version }}
             ${{ steps.tags.outputs.image }}:${{ steps.tags.outputs.major }}
             ${{ steps.tags.outputs.image }}:latest
+          # OCI standard image labels — readable from `docker image inspect`.
+          # The CLI reads `org.opencontainers.image.version` to detect when a
+          # running container's base image is older than what's now pulled.
+          labels: |
+            org.opencontainers.image.version=${{ steps.tags.outputs.semver }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

@@ -117,7 +117,7 @@ def up(force_rebuild: bool, no_host_ports: bool, port_overrides: tuple[str, ...]
     cfg.host_state_dir.mkdir(parents=True, exist_ok=True)
 
     # --- Start ---
-    env_overrides = _resolve_runtime_env()
+    env_overrides = _resolve_runtime_env(cfg)
     console.print(f"[cyan]starting[/cyan] service '{cfg.service_name}'…")
     try:
         compose.run(cfg, compose_args + ["up", "-d"], env_overrides=env_overrides)
@@ -147,12 +147,18 @@ def _parse_overrides(raw: tuple[str, ...]) -> list[tuple[int, int]]:
     return out
 
 
-def _resolve_runtime_env() -> dict[str, str]:
+def _resolve_runtime_env(cfg: CarthageConfig) -> dict[str, str]:
     """Compose env overrides we resolve per-invocation (not stored in the
-    compose file itself): memory limit, cpu count.
+    compose file itself): memory limit, cpu count, base-image version.
 
-    Both fall back to unlimited (`0`) if we can't detect — which is what
-    Docker treats as "no limit". On macOS, /proc/meminfo doesn't exist.
+    Mem/cpu fall back to unlimited (`0`) if we can't detect — Docker treats
+    that as "no limit". On macOS, /proc/meminfo doesn't exist.
+
+    `CARTHAGE_BASE_IMAGE_VERSION` is the OCI `image.version` label read off
+    the locally-cached base image and stamped onto the running container as
+    a label (see compose template). Empty when the base image pre-dates
+    v1.1.0 (when we started setting the label) — `status` then shows
+    "unknown" rather than a misleading version string.
     """
     overrides: dict[str, str] = {}
     mem = compose.host_mem_limit_bytes()
@@ -161,6 +167,7 @@ def _resolve_runtime_env() -> dict[str, str]:
     cpus = os.cpu_count() or 0
     if cpus > 1:
         overrides["CARTHAGE_CPUS"] = str(max(1, cpus - 1))
+    overrides["CARTHAGE_BASE_IMAGE_VERSION"] = image.get_base_image_version(cfg.base_image) or ""
     return overrides
 
 
