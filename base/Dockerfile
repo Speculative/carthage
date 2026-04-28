@@ -29,16 +29,26 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
     CARTHAGE=1 \
-    PATH=/home/carthage/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    PATH=/home/carthage/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    PAGER=less \
+    EDITOR=vim \
+    VISUAL=vim \
+    CLAUDE_CODE_NO_FLICKER=1
 
 # --- System packages --------------------------------------------------------
 # passwd gives us groupadd/useradd. libcap2-bin gives us `capsh` which the
 # hardening acceptance check uses. We intentionally do NOT install sudo.
-RUN apt-get update \
+# Ubuntu's minbase image strips /usr/share/doc/*, but fzf ships its bash
+# key-binding script there — keep fzf's docs so we can source key-bindings.bash.
+RUN echo 'path-include=/usr/share/doc/fzf/*' > /etc/dpkg/dpkg.cfg.d/keep-fzf-docs \
+ && apt-get update \
  && apt-get install -y --no-install-recommends \
+      bat \
       ca-certificates \
       curl \
+      fzf \
       git \
+      git-delta \
       gnupg \
       jq \
       less \
@@ -51,7 +61,20 @@ RUN apt-get update \
       ripgrep \
       tmux \
       tzdata \
+      vim \
  && rm -rf /var/lib/apt/lists/*
+
+# --- CLI tweaks ------------------------------------------------------------
+# Ubuntu ships `bat` as `batcat` to avoid a binary-name conflict; symlink so
+# `bat` works directly. System-level git config sets delta as the diff pager;
+# any host-mounted ~/.gitconfig with its own core.pager still wins. Wire fzf
+# Ctrl-R / Ctrl-T / Alt-C bindings into the system bashrc so every interactive
+# bash shell picks them up.
+RUN ln -s /usr/bin/batcat /usr/local/bin/bat \
+ && git config --system core.pager delta \
+ && git config --system interactive.diffFilter 'delta --color-only' \
+ && git config --system delta.navigate true \
+ && printf '\n# fzf key bindings (Ctrl-R history, Ctrl-T files, Alt-C cd)\n[ -f /usr/share/doc/fzf/examples/key-bindings.bash ] && source /usr/share/doc/fzf/examples/key-bindings.bash\n' >> /etc/bash.bashrc
 
 # --- Node.js LTS (for Claude Code) -----------------------------------------
 RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - \
