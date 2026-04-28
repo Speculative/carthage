@@ -11,7 +11,7 @@ the CLI reads config schemas one major back. Major bumps require explicit
 per-project migration; old projects never auto-upgrade.
 """
 
-__version__ = "1.0.3"
+__version__ = "1.1.0"
 
 # The schema version the CLI currently *writes*. Config files with this
 # `version` are read natively; older schemas in the backward-compat window are

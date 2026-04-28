@@ -61,6 +61,16 @@ Real example (v1.0.1): a one-line fix to [skill/carthage-annex/templates/docker-
 - The CLI reads config schemas one major back (see [carthage/config.py](carthage/config.py)). Major bumps require explicit per-project migration.
 - Old projects never auto-upgrade. The user is always in control.
 
+## Versioning policy
+
+Standard semver, applied to the unified CLI/skills/base-image version:
+
+- **Major (`X.0.0`)** — breaking changes: a config schema bump, a base-image change that requires per-project migration, or a CLI flag/command removed/renamed in a way an existing project relies on.
+- **Minor (`x.Y.0`)** — new features, additive: new CLI commands or flags, new tools or env defaults in the base image, new mounts in the compose template, new annex template fields. Anything users would notice as "I can do something I couldn't before."
+- **Patch (`x.y.Z`)** — bug fixes only: behavior was supposed to work and didn't; it now does. No new capability.
+
+When in doubt, prefer minor over patch — a too-low bump under-communicates change to users; the cost of a too-high bump is essentially zero.
+
 ## Testing
 
 E2E tests under [tests/e2e/](tests/e2e/) build images and spin up containers — they're slow and require Docker. They use committed fixture compose files (not the live template), so a template change won't break them — but it also means a template change with no fixture update can ship with broken-but-untested behavior. **When you change the compose template, mirror the change into the fixture compose files.**

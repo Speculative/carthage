@@ -6,23 +6,30 @@ This changelog covers the *templates* this skill generates: `.carthage/Dockerfil
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions match the CLI/skill semver.
 
-## [Unreleased]
+## [1.1.0] — 2026-04-28
 
 ### Added
 - **Per-project shell-history bind mount** — `${HOME}/.carthage/state/<slug>:/commandhistory:rw` is now part of the generated compose file. The base image points `HISTFILE` at `/commandhistory/.bash_history` and runs `history -a` after every prompt, so bash history persists across `carthage down`/`up` cycles instead of dying with the container's writable layer. Slug-keyed: two projects with the same slug share history (same caveat as the compose project name).
+- **`carthage.base-image-version` label** on the dev container. The CLI reads the OCI `org.opencontainers.image.version` label off the locally-cached base image at `up` time and stamps it onto the container so `carthage status` / `carthage survey` can flag a running container as stale when its base image is bumped underneath it.
 
 ### Migration for existing projects
-`/carthage-annex --upgrade` will offer the diff. To apply by hand, add to `.carthage/docker-compose.yaml` under the `dev` service:
+Two edits to `.carthage/docker-compose.yaml`:
 
-```yaml
-    volumes:
-      - ${HOME}/.carthage/state/<your project slug>:/commandhistory:rw
-```
+1. Add this line to the `dev` service's `volumes:` block (substituting `project_slug` from `.carthage/config.toml`):
 
-(Substitute your `project_slug` from `.carthage/config.toml`.) The CLI creates `~/.carthage/state/<slug>/` on `carthage up`, but if you `up` against an old CLI that doesn't, `mkdir -p` it on the host yourself before the next start so docker doesn't auto-create it as a root-owned directory.
+   ```yaml
+         - ${HOME}/.carthage/state/<project slug>:/commandhistory:rw
+   ```
 
-### Base image
-A new release of `ghcr.io/speculative/carthage-base` ships the `HISTFILE`/`PROMPT_COMMAND` bashrc additions and the `/commandhistory` mount point. Picked up via `carthage build --pull`.
+2. Add this line to the `dev` service's `labels:` block:
+
+   ```yaml
+         carthage.base-image-version: "${CARTHAGE_BASE_IMAGE_VERSION:-}"
+   ```
+
+   The CLI populates `CARTHAGE_BASE_IMAGE_VERSION` at `up` time. Without the label, `carthage status` shows the running container's version as "unknown" until the next `up` after this edit.
+
+The CLI creates `~/.carthage/state/<slug>/` on `carthage up`. If the user is running an older CLI that doesn't, `mkdir -p` the dir on the host before the next `up`, otherwise docker auto-creates it as a root-owned directory the carthage user can't write to.
 
 ## [1.0.1] — 2026-04-25
 
@@ -31,20 +38,17 @@ A new release of `ghcr.io/speculative/carthage-base` ships the `HISTFILE`/`PROMP
 - **`CARTHAGE_PROJECT` environment variable** in the `dev` service. The base-image tmux config reads this to render the project slug in the status bar so the sandbox is visually distinguishable from a host shell.
 
 ### Migration for existing projects
-`/carthage-annex --upgrade` will offer the diff. To apply by hand, add to `.carthage/docker-compose.yaml` under the `dev` service:
+Add to `.carthage/docker-compose.yaml` under the `dev` service:
 
 ```yaml
     volumes:
       - ${HOME}/.claude.json:/home/carthage/.claude.json:rw
 
     environment:
-      CARTHAGE_PROJECT: "<your project slug>"
+      CARTHAGE_PROJECT: "<project slug>"
 ```
 
-The mount must be `rw` — Claude Code rewrites the file on every session. The slug should match `project_slug` in `.carthage/config.toml`.
-
-### Base image
-v1.0.1 of `ghcr.io/speculative/carthage-base` ships a default tmux config (prefix `C-a`, vim-style pane nav, project-aware status bar). Picked up via `carthage build --pull`. No template change required — the base image is consumed by `FROM` in the project's Dockerfile.
+The mount must be `rw` — Claude Code rewrites the file on every session. Substitute `project_slug` from `.carthage/config.toml`.
 
 ## [1.0.0] — 2026-04-24
 
