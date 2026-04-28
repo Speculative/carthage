@@ -16,8 +16,10 @@ the rules of the sandbox so you don't waste effort working around them.
   containers or escape via the Docker daemon.
 - `pids_limit` and `mem_limit` / `cpus` caps are set on the container.
 - File mounts are scoped: `/workspace` (the project source tree),
-  `/home/carthage/.claude` (auth + session state), and a read-only
-  `/home/carthage/.gitconfig`. Nothing else from the host is visible.
+  `/home/carthage/.claude` (auth + session state), a read-only
+  `/home/carthage/.gitconfig`, and `/commandhistory` (per-project
+  shell-state dir from `~/.carthage/state/<slug>/`). Nothing else from
+  the host is visible.
 - The container is ephemeral — `carthage destroy` wipes it cleanly.
 
 ## What is **not** isolated
@@ -69,5 +71,8 @@ the rules of the sandbox so you don't waste effort working around them.
 - `/home/carthage/.claude` — shared with the host, so your session state
   and login persist across container rebuilds.
 - `/home/carthage/.gitconfig` — read-only, shared with the host.
+- `/commandhistory` — per-project state dir (read/write). Currently holds
+  `.bash_history`; lives at `~/.carthage/state/<slug>/` on the host so
+  shell history survives `carthage down`/`up` cycles.
 - `/etc/carthage/SANDBOX.md` — this document. Lives in the image, not a
   mount. Upgraded only when the base image version bumps.

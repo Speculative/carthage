@@ -111,6 +111,11 @@ def up(force_rebuild: bool, no_host_ports: bool, port_overrides: tuple[str, ...]
         cleanup()
         sys.exit(1)
 
+    # --- Host-side state dir (bind-mounted to /commandhistory) ---------------
+    # Must exist before `compose up` so docker doesn't auto-create the mount
+    # path as a directory it owns (with root perms on Linux).
+    cfg.host_state_dir.mkdir(parents=True, exist_ok=True)
+
     # --- Start ---
     env_overrides = _resolve_runtime_env()
     console.print(f"[cyan]starting[/cyan] service '{cfg.service_name}'…")

@@ -91,6 +91,17 @@ def compose_project_name(project_dir: Path) -> str:
 @pytest.fixture
 def docker_cleanup(compose_project_name: str, project_dir: Path):
     """Yield, then tear down any compose resources and images the test created."""
+    # Snapshot whether the per-project host state dir existed before the test
+    # ran. If it did, the user has a real project with this slug and we must
+    # not wipe their data; we only clean up dirs the test created.
+    import tomllib as _tomllib
+    pre_existing_state_dir = False
+    try:
+        _cfg = _tomllib.loads((project_dir / ".carthage" / "config.toml").read_text())
+        _slug = _cfg["carthage"]["project_slug"]
+        pre_existing_state_dir = (Path.home() / ".carthage" / "state" / _slug).exists()
+    except (FileNotFoundError, KeyError):
+        pass
     yield
     compose_file = project_dir / ".carthage" / "docker-compose.yaml"
     if compose_file.exists():
@@ -103,7 +114,8 @@ def docker_cleanup(compose_project_name: str, project_dir: Path):
             ],
             capture_output=True,
         )
-    # Belt-and-braces: also remove any carthage-<slug>:* images
+    # Belt-and-braces: also remove any carthage-<slug>:* images and the
+    # per-project host state dir the CLI creates on `up`.
     import tomllib
     try:
         cfg = tomllib.loads((project_dir / ".carthage" / "config.toml").read_text())
@@ -115,6 +127,13 @@ def docker_cleanup(compose_project_name: str, project_dir: Path):
         tags = [t for t in r.stdout.splitlines() if t]
         if tags:
             subprocess.run(["docker", "rmi", "-f", *tags], capture_output=True)
+        # Remove the host state dir the test pulled into existence — but
+        # only if we created it. If a real user project happened to use
+        # this slug, the dir existed before the test and we leave it alone.
+        if not pre_existing_state_dir:
+            state_dir = Path.home() / ".carthage" / "state" / slug
+            if state_dir.exists():
+                shutil.rmtree(state_dir, ignore_errors=True)
     except (FileNotFoundError, KeyError):
         pass
 

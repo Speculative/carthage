@@ -1,8 +1,8 @@
-name: carthage-py-with-redis
+name: carthage-e2e-py-with-redis
 
 x-carthage-labels: &carthage_labels
   carthage.managed: "true"
-  carthage.project: "py-with-redis"
+  carthage.project: "e2e-py-with-redis"
 
 services:
   dev:
@@ -12,7 +12,7 @@ services:
       args:
         HOST_UID: ${HOST_UID:-1000}
         HOST_GID: ${HOST_GID:-1000}
-    image: carthage-py-with-redis:latest
+    image: carthage-e2e-py-with-redis:latest
     working_dir: /workspace
     init: true
     tty: true
@@ -36,13 +36,14 @@ services:
 
     environment:
       CARTHAGE: "1"
-      CARTHAGE_PROJECT: "py-with-redis"
+      CARTHAGE_PROJECT: "e2e-py-with-redis"
 
     volumes:
       - ..:/workspace:rw
       - ${HOME}/.claude:/home/carthage/.claude:rw
       - ${HOME}/.claude.json:/home/carthage/.claude.json:rw
       - ${HOME}/.gitconfig:/home/carthage/.gitconfig:ro
+      - ${HOME}/.carthage/state/e2e-py-with-redis:/commandhistory:rw
 
     depends_on:
       - redis

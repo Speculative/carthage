@@ -1,8 +1,8 @@
-name: carthage-py-http-server
+name: carthage-e2e-py-http-server
 
 x-carthage-labels: &carthage_labels
   carthage.managed: "true"
-  carthage.project: "py-http-server"
+  carthage.project: "e2e-py-http-server"
 
 services:
   dev:
@@ -12,7 +12,7 @@ services:
       args:
         HOST_UID: ${HOST_UID:-1000}
         HOST_GID: ${HOST_GID:-1000}
-    image: carthage-py-http-server:latest
+    image: carthage-e2e-py-http-server:latest
     working_dir: /workspace
     init: true
     tty: true
@@ -36,13 +36,14 @@ services:
 
     environment:
       CARTHAGE: "1"
-      CARTHAGE_PROJECT: "py-http-server"
+      CARTHAGE_PROJECT: "e2e-py-http-server"
 
     volumes:
       - ..:/workspace:rw
       - ${HOME}/.claude:/home/carthage/.claude:rw
       - ${HOME}/.claude.json:/home/carthage/.claude.json:rw
       - ${HOME}/.gitconfig:/home/carthage/.gitconfig:ro
+      - ${HOME}/.carthage/state/e2e-py-http-server:/commandhistory:rw
 
     ports:
       - "18000:8000"        # E2E test A: host-side curl on localhost:18000

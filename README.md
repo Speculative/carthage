@@ -56,7 +56,7 @@ carthage attach   # drops you into a tmux session with Claude Code running
 - **Narrow Linux capabilities.** `cap_drop: [ALL]` then `cap_add: [CHOWN, SETUID, SETGID, DAC_OVERRIDE]`. No `SYS_ADMIN`, no `NET_ADMIN`, no `SYS_PTRACE`. Projects that need `SYS_PTRACE` (gdb/strace/perf) opt in during annex; the annex skill asks.
 - **`no-new-privileges`.** Setuid binaries can't gain privilege. No `sudo` is installed.
 - **No Docker socket.** `/var/run/docker.sock` is never mounted. The container can't start sibling containers or escape via the daemon.
-- **Tight mount scoping.** Only `/workspace` (rw), `~/.claude` (rw — Claude Code writes session state there), and a read-only `~/.gitconfig`. Nothing else from the host is visible.
+- **Tight mount scoping.** Only `/workspace` (rw), `~/.claude` (rw — Claude Code writes session state there), a read-only `~/.gitconfig`, and `~/.carthage/state/<slug>/` (rw — per-project shell history etc., scoped by slug). Nothing else from the host is visible.
 - **`pids_limit: 1000`.** Catches fork bombs; generous for parallel builds and test runners.
 - **Memory and CPU limits.** The CLI resolves `~75%` of host RAM and `hostcpus - 1` at `carthage up` time. Prevents runaway processes (large builds, local LLMs) from OOMing the host. Set to `0` (no limit) if detection fails (e.g., on macOS the mem check reads `/proc/meminfo`).
 - **Default Docker seccomp stays on.** No `seccomp=unconfined`. No `privileged: true`. Ever.

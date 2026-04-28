@@ -68,6 +68,12 @@ services:
       # present. Must be rw — the file is rewritten on every session.
       - ${HOME}/.claude.json:/home/carthage/.claude.json:rw
       - ${HOME}/.gitconfig:/home/carthage/.gitconfig:ro
+      # Per-project state directory — currently holds .bash_history so shell
+      # history persists across `carthage down`/`up`. The CLI ensures this
+      # dir exists on the host before invoking `compose up`. Slug-keyed; if
+      # two projects share a slug they share state (same caveat as compose
+      # project name collisions).
+      - ${HOME}/.carthage/state/{{ project_slug }}:/commandhistory:rw
 {% if published_ports %}
 
     # Host-side ports the user opted into during /carthage-annex.

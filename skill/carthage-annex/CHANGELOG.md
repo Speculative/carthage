@@ -6,6 +6,24 @@ This changelog covers the *templates* this skill generates: `.carthage/Dockerfil
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions match the CLI/skill semver.
 
+## [Unreleased]
+
+### Added
+- **Per-project shell-history bind mount** — `${HOME}/.carthage/state/<slug>:/commandhistory:rw` is now part of the generated compose file. The base image points `HISTFILE` at `/commandhistory/.bash_history` and runs `history -a` after every prompt, so bash history persists across `carthage down`/`up` cycles instead of dying with the container's writable layer. Slug-keyed: two projects with the same slug share history (same caveat as the compose project name).
+
+### Migration for existing projects
+`/carthage-annex --upgrade` will offer the diff. To apply by hand, add to `.carthage/docker-compose.yaml` under the `dev` service:
+
+```yaml
+    volumes:
+      - ${HOME}/.carthage/state/<your project slug>:/commandhistory:rw
+```
+
+(Substitute your `project_slug` from `.carthage/config.toml`.) The CLI creates `~/.carthage/state/<slug>/` on `carthage up`, but if you `up` against an old CLI that doesn't, `mkdir -p` it on the host yourself before the next start so docker doesn't auto-create it as a root-owned directory.
+
+### Base image
+A new release of `ghcr.io/speculative/carthage-base` ships the `HISTFILE`/`PROMPT_COMMAND` bashrc additions and the `/commandhistory` mount point. Picked up via `carthage build --pull`.
+
 ## [1.0.1] — 2026-04-25
 
 ### Added

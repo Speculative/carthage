@@ -90,6 +90,15 @@ class CarthageConfig:
         """Compose project name — used to namespace containers and networks."""
         return f"carthage-{self.project_slug}"
 
+    @property
+    def host_state_dir(self) -> Path:
+        """Per-project host-side state dir, bind-mounted into the container at
+        /commandhistory. Currently holds .bash_history; future state files
+        (zsh history, fzf history, etc.) live alongside it. Slug-keyed, so
+        two projects with the same slug share state — same caveat as the
+        compose project name."""
+        return Path.home() / ".carthage" / "state" / self.project_slug
+
 
 def find_project_root(start: Path | None = None) -> Path:
     cur = (start or Path.cwd()).resolve()

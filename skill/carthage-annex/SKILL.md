@@ -89,7 +89,7 @@ Templates live alongside this skill at `templates/`. Render them with the values
   - `pids_limit: 1000`
   - `mem_limit: ${CARTHAGE_MEM_LIMIT:-0}`, `cpus: ${CARTHAGE_CPUS:-0}` — both resolved by the CLI at `up` time; 0 means unlimited.
   - `environment: { CARTHAGE: "1", CARTHAGE_PROJECT: "<slug>" }` — `CARTHAGE_PROJECT` is read by the in-container tmux status bar.
-  - Mounts: `..:/workspace`, `${HOME}/.claude:/home/carthage/.claude`, `${HOME}/.claude.json:/home/carthage/.claude.json` (rw — Claude Code login state lives here, sibling of `.claude/`), `${HOME}/.gitconfig:/home/carthage/.gitconfig:ro`
+  - Mounts: `..:/workspace`, `${HOME}/.claude:/home/carthage/.claude`, `${HOME}/.claude.json:/home/carthage/.claude.json` (rw — Claude Code login state lives here, sibling of `.claude/`), `${HOME}/.gitconfig:/home/carthage/.gitconfig:ro`, `${HOME}/.carthage/state/<slug>:/commandhistory:rw` (per-project shell-history dir; CLI creates the host side on `up`)
   - `working_dir: /workspace`, `init: true`, `tty: true`, `stdin_open: true`
   - Labels: `carthage.managed=true`, `carthage.project=<slug>`, `carthage.role=dev`. Sidecars get `carthage.role=postgres` / `redis` / etc.
   - **No** `ports:` block unless the user opted into published ports in step 3.

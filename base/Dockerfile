@@ -67,14 +67,25 @@ RUN echo 'path-include=/usr/share/doc/fzf/*' > /etc/dpkg/dpkg.cfg.d/keep-fzf-doc
 # --- CLI tweaks ------------------------------------------------------------
 # Ubuntu ships `bat` as `batcat` to avoid a binary-name conflict; symlink so
 # `bat` works directly. System-level git config sets delta as the diff pager;
-# any host-mounted ~/.gitconfig with its own core.pager still wins. Wire fzf
-# Ctrl-R / Ctrl-T / Alt-C bindings into the system bashrc so every interactive
-# bash shell picks them up.
+# any host-mounted ~/.gitconfig with its own core.pager still wins. Bashrc
+# additions (heredoc): fzf Ctrl-R/-T/Alt-C bindings, plus persistent bash
+# history pointed at /commandhistory (host-side bind mount the CLI sets up) so
+# it survives `carthage down`/`up`. `history -a` flushes after every command
+# so a `kill -9`'d shell doesn't lose state. The /commandhistory dir is
+# created (with carthage ownership) after the user is added below.
 RUN ln -s /usr/bin/batcat /usr/local/bin/bat \
  && git config --system core.pager delta \
  && git config --system interactive.diffFilter 'delta --color-only' \
  && git config --system delta.navigate true \
- && printf '\n# fzf key bindings (Ctrl-R history, Ctrl-T files, Alt-C cd)\n[ -f /usr/share/doc/fzf/examples/key-bindings.bash ] && source /usr/share/doc/fzf/examples/key-bindings.bash\n' >> /etc/bash.bashrc
+ && cat >> /etc/bash.bashrc <<'EOF'
+
+# fzf key bindings (Ctrl-R history, Ctrl-T files, Alt-C cd)
+[ -f /usr/share/doc/fzf/examples/key-bindings.bash ] && source /usr/share/doc/fzf/examples/key-bindings.bash
+
+# Persistent bash history — file lives on the host at ~/.carthage/state/<slug>/.
+export HISTFILE=/commandhistory/.bash_history
+export PROMPT_COMMAND="${PROMPT_COMMAND:+$PROMPT_COMMAND$'\n'}history -a"
+EOF
 
 # --- Node.js LTS (for Claude Code) -----------------------------------------
 RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - \
@@ -111,6 +122,14 @@ RUN set -eux; \
     groupadd --gid "${HOST_GID}" carthage; \
     useradd --uid "${HOST_UID}" --gid "${HOST_GID}" \
             --shell /bin/bash --create-home carthage
+
+# --- Persistent shell-history mount point ---------------------------------
+# The CLI bind-mounts ~/.carthage/state/<slug>/ on the host onto this path.
+# We create it with carthage ownership so an interactive shell can write
+# bash_history even before the first `carthage up` has populated the host
+# side. The HISTFILE export above resolves to /commandhistory/.bash_history.
+RUN mkdir -p /commandhistory \
+ && chown carthage:carthage /commandhistory
 
 # --- Sandbox-awareness doc -------------------------------------------------
 RUN mkdir -p /etc/carthage
