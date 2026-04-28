@@ -65,7 +65,8 @@ Real example (v1.0.1): a one-line fix to [skill/carthage-annex/templates/docker-
 
 E2E tests under [tests/e2e/](tests/e2e/) build images and spin up containers — they're slow and require Docker. They use committed fixture compose files (not the live template), so a template change won't break them — but it also means a template change with no fixture update can ship with broken-but-untested behavior. **When you change the compose template, mirror the change into the fixture compose files.**
 
-Run E2E tests explicitly:
+Run E2E tests explicitly (uses the project's `.venv` with dev deps installed):
 ```sh
-pytest -m e2e
+uv sync --all-extras    # one-time: pytest + project deps in .venv
+uv run pytest -m e2e
 ```
