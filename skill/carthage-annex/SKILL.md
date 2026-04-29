@@ -1,6 +1,6 @@
 ---
 name: carthage-annex
-version: "1.1.0"
+version: "1.1.1"
 description: Use when the user wants to bring a project into the Carthage sandboxed dev-environment workflow. Trigger phrases include "annex this project into carthage", "carthage-annex", "set up carthage for this repo", "make this project carthage-compatible", "bring this repo into carthage", and "/carthage-annex". Generates `.carthage/` config for a new or existing project so the user can run `carthage up && carthage attach` to get a sandboxed Claude Code session.
 ---
 
