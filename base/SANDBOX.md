@@ -46,9 +46,17 @@ the rules of the sandbox so you don't waste effort working around them.
 
 ## Git
 
-- `git commit` and `git push` happen **on the host**, not here.
-- You can read git state, diffs, and history freely. You can stage changes.
-- Do not run `git push`. Ask the user to commit and push from the host.
+- Local git operations work normally: commit, revert, rebase, reset,
+  cherry-pick, stash, branch manipulation, etc. The container has
+  read/write access to `/workspace/.git` and uses the host's
+  `~/.gitconfig` (read-only) for `user.name` / `user.email`.
+- `git push` happens on the host, not here. The container does not have
+  the host's SSH keys or HTTPS credential helpers. When you have changes
+  ready to publish, tell the user: "ready to push from the host."
+- If the host has commit signing configured, signed commits from inside
+  the container may fail (the container does not have the host's GPG/SSH
+  signing keys). If you hit this, ask the user to commit on the host
+  instead.
 
 ## Permissions prompt
 
