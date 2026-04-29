@@ -19,7 +19,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from carthage import compose, image
+from carthage import __version__, annex_template_is_outdated, compose, image
 from carthage.config import ConfigError, load_config
 
 console = Console()
@@ -193,6 +193,15 @@ def _status_current() -> None:
     table.add_row("config schema", cfg.version + (
         " [yellow](outdated — run /carthage-migrate)[/yellow]" if cfg.schema_is_outdated else ""
     ))
+
+    annex_label = cfg.annexed_with_cli or "pre-1.0"
+    if annex_template_is_outdated(cfg.annexed_with_cli):
+        annex_label += (
+            f" [yellow](CLI is {__version__} — run /carthage-annex --upgrade)"
+            "[/yellow]"
+        )
+    table.add_row("annexed under", annex_label)
+
     table.add_row("project root", str(cfg.project_root))
 
     console.print(table)

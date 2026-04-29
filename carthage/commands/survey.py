@@ -16,6 +16,7 @@ Checks performed:
   - installed skill versions match the CLI version
   - (if inside a project) base image pullable
   - (if inside a project) config schema is readable by this CLI
+  - (if inside a project) annex templates match current CLI version
   - (if inside a project) base image major in Dockerfile still supported
   - (if inside a project, container running) base image version current
   - (if --deep) spins up a test container, probes Claude auth
@@ -39,6 +40,7 @@ from carthage import (
     CURRENT_CONFIG_SCHEMA,
     EXPECTED_BASE_IMAGE_TAG,
     __version__,
+    annex_template_is_outdated,
 )
 from carthage.config import ConfigError, load_config
 from carthage.skills import MANAGED_SKILLS, read_skill_version
@@ -163,6 +165,26 @@ def check_config_schema(cfg) -> tuple[bool, str]:
     return True, f"schema '{cfg.version}' (current)"
 
 
+@_check("project annex templates are up to date")
+def check_annex_template_current(cfg) -> tuple[bool, str]:
+    """Compare the project's `annexed_with_cli` against the running CLI's
+    own version. Older-by-minor-or-major means the annex skill's templates
+    have likely changed underneath this project; user should re-annex to
+    pick up the diff. Patch-only drift returns OK by policy (CONTRIBUTING
+    "Versioning policy" — patch releases don't ship template changes)."""
+    if cfg.annexed_with_cli is None:
+        return False, (
+            f"no `annexed_with_cli` field — pre-1.0 config; CLI is {__version__}. "
+            "Run /carthage-annex --upgrade."
+        )
+    if annex_template_is_outdated(cfg.annexed_with_cli):
+        return False, (
+            f"annexed under CLI {cfg.annexed_with_cli}, current is {__version__}. "
+            "Run /carthage-annex --upgrade to pick up template improvements."
+        )
+    return True, f"annexed under CLI {cfg.annexed_with_cli} (matches current)"
+
+
 @_check("running container's base image is current")
 def check_running_container_base_fresh(cfg) -> tuple[bool, str]:
     """Compare the running dev container's recorded base-image version
@@ -267,6 +289,7 @@ def survey(deep: bool, base_image: str | None) -> None:
 
     if cfg is not None:
         results.append(check_config_schema(cfg))
+        results.append(check_annex_template_current(cfg))
         results.append(check_dockerfile_base(cfg))
         if docker_up:
             results.append(check_running_container_base_fresh(cfg))

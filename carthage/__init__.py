@@ -29,3 +29,23 @@ MIN_READABLE_CONFIG_SCHEMA = "1"
 EXPECTED_BASE_IMAGE_TAG = "v1"
 
 BASE_IMAGE_REPO = "ghcr.io/speculative/carthage-base"
+
+
+def annex_template_is_outdated(annexed_with_cli: str | None) -> bool:
+    """True iff a project's `annexed_with_cli` is older than this CLI by
+    minor-or-major, meaning the annex skill's templates may have changed
+    underneath it. Patch-only drift returns False — we don't ship template
+    changes in patch releases by policy (CONTRIBUTING "Versioning policy").
+
+    Used by `up`/`status`/`survey` to nudge the user toward
+    `/carthage-annex --upgrade`. None means a pre-field config (very old);
+    treat as outdated.
+    """
+    if annexed_with_cli is None:
+        return True
+    try:
+        cur = tuple(int(p) for p in __version__.split(".")[:2])
+        old = tuple(int(p) for p in annexed_with_cli.split(".")[:2])
+    except ValueError:
+        return False
+    return old < cur

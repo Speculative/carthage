@@ -19,7 +19,7 @@ from pathlib import Path
 import click
 from rich.console import Console
 
-from carthage import compose, image, ports
+from carthage import __version__, annex_template_is_outdated, compose, image, ports
 from carthage.config import CarthageConfig, ConfigError, load_config
 
 console = Console()
@@ -59,6 +59,14 @@ def up(force_rebuild: bool, no_host_ports: bool, port_overrides: tuple[str, ...]
             f"[yellow]note:[/yellow] config schema '{cfg.version}' is older than "
             "current. Still readable, but consider running `/carthage-migrate` "
             "from Claude Code in this project."
+        )
+
+    if annex_template_is_outdated(cfg.annexed_with_cli):
+        console.print(
+            f"[yellow]note:[/yellow] this project was annexed under CLI "
+            f"{cfg.annexed_with_cli or 'pre-1.0'}; current CLI is {__version__}. "
+            "Run /carthage-annex --upgrade from Claude Code to pick up template "
+            "improvements (mounts, labels, etc.)."
         )
 
     # Validate port-override syntax early (fail before doing any work).
