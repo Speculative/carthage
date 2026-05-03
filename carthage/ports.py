@@ -28,17 +28,32 @@ class HostPortBinding:
     published: int
     target: int
     protocol: str  # "tcp" / "udp"
+    host_ip: str = ""  # "" means bind on all interfaces (0.0.0.0); "127.0.0.1" means localhost-only
 
 
-def extract_host_ports(cfg: CarthageConfig) -> list[HostPortBinding]:
-    """Return the resolved host-side port bindings from `.carthage/docker-compose.yaml`.
+def extract_host_ports(
+    cfg: CarthageConfig,
+    extra_compose_files: list[str] | None = None,
+) -> list[HostPortBinding]:
+    """Return the resolved host-side port bindings from the project's compose.
+
+    `extra_compose_files`, when provided, replaces the default `-f` sequence
+    so callers can include override files (e.g. the temp override that
+    `carthage up --port` generates). Without it, only `.carthage/docker-compose.yaml`
+    is read — which means the precheck won't see user-supplied overrides.
 
     Services with no `ports:` block (or only container-internal ports) contribute nothing.
     """
+    if extra_compose_files:
+        f_args: list[str] = []
+        for path in extra_compose_files:
+            f_args.extend(["-f", path])
+    else:
+        f_args = ["-f", str(cfg.compose_file)]
     r = subprocess.run(
         [
             "docker", "compose",
-            "-f", str(cfg.compose_file),
+            *f_args,
             "-p", cfg.compose_project_name,
             "config", "--format", "json",
         ],
@@ -59,10 +74,17 @@ def extract_host_ports(cfg: CarthageConfig) -> list[HostPortBinding]:
             # Ports can be shorthand strings ("3000:3000") or dicts. `config
             # --format json` normalizes to dicts, but handle both.
             if isinstance(p, str):
-                # "3000:3000" or "3000:3000/tcp" or "3000/tcp" (internal only)
+                # Shorthand: "3000:3000", "127.0.0.1:3000:3000", "3000:3000/tcp",
+                # or "3000/tcp" (internal only). When 3 colon-separated parts,
+                # the leading one is host_ip.
                 if ":" not in p:
                     continue  # internal-only, no host binding
-                host_part, container_part = p.split(":", 1)
+                parts = p.split(":")
+                if len(parts) == 3:
+                    host_ip, host_part, container_part = parts
+                else:
+                    host_ip = ""
+                    host_part, container_part = parts
                 protocol = "tcp"
                 if "/" in container_part:
                     container_part, protocol = container_part.split("/", 1)
@@ -71,6 +93,7 @@ def extract_host_ports(cfg: CarthageConfig) -> list[HostPortBinding]:
                     published=int(host_part),
                     target=int(container_part),
                     protocol=protocol,
+                    host_ip=host_ip,
                 ))
             elif isinstance(p, dict):
                 if p.get("published") is None:
@@ -80,6 +103,7 @@ def extract_host_ports(cfg: CarthageConfig) -> list[HostPortBinding]:
                     published=int(p["published"]),
                     target=int(p.get("target", p["published"])),
                     protocol=p.get("protocol", "tcp"),
+                    host_ip=p.get("host_ip", "") or "",
                 ))
     return out
 
@@ -160,3 +184,17 @@ def find_conflicts(bindings: list[HostPortBinding]) -> list[PortConflict]:
         if not port_is_free(b.published, b.protocol):
             conflicts.append(PortConflict(b, "a non-Carthage process on this host"))
     return conflicts
+
+
+def find_free_host_port(start: int, protocol: str = "tcp", limit: int = 100) -> int | None:
+    """Probe upward from `start` for a host port not owned by another Carthage
+    container and not bound by any local process. Returns None if nothing free
+    is found within `limit` ports."""
+    for candidate in range(start, start + limit):
+        if candidate > 65535:
+            return None
+        if carthage_owner_of_port(candidate):
+            continue
+        if port_is_free(candidate, protocol):
+            return candidate
+    return None

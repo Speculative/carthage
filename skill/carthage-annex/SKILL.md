@@ -53,8 +53,20 @@ Use the available elicitation tool. These are the questions:
 
 - **"Any ports you want *published to the host* for local browser testing?"** — e.g., `3000`, `8000`, `5173`. Default: **none**. Be explicit about the tradeoff:
   - Published ports let you open `localhost:3000` in your browser on the host.
-  - They also are the only way another Carthage project could collide with yours — `carthage up` will refuse to start if another project already owns a port you've asked for.
+  - They also are the only way another Carthage project could collide with yours — `carthage up` will refuse to start if another project already owns a port you've asked for. (When that happens, the CLI suggests a copy-pasteable `carthage up --port HOST:CONTAINER` retry.)
   - Inter-service networking works regardless (the `dev` container reaches `redis`, `postgres`, etc. by service name over the compose network).
+
+  **Bind-interface gotcha — important.** Most dev servers (Vite, Next, Django runserver, Rails, `python -m http.server`) default to binding `127.0.0.1` *inside the container*, which is a different loopback than the host's. Docker's `-p` only forwards traffic from the container's external interface, so a server bound to container-side 127.0.0.1 is unreachable from the host even when the port is "published." Symptom: `curl localhost:3000` from the host returns connection refused while the server is clearly running inside the container.
+
+  Whenever the user opts into published ports, **figure out for each port what process will serve it and how that process gets told to bind on `0.0.0.0`** (all interfaces). Don't assume — different tools have different switches:
+  - Vite: `vite --host` (shorthand for `--host 0.0.0.0`), or `server.host: '0.0.0.0'` in `vite.config.{ts,js}`.
+  - Next.js: `next dev -H 0.0.0.0` (or `--hostname 0.0.0.0`).
+  - Django: `python manage.py runserver 0.0.0.0:8000`.
+  - Rails: `bin/rails server -b 0.0.0.0`.
+  - Python http.server: `python -m http.server --bind 0.0.0.0`.
+  - Express / FastAPI / Uvicorn / Flask: usually default to `0.0.0.0` already, but verify the project's start script doesn't pin `127.0.0.1`/`localhost`.
+
+  Look at the project's start script (`package.json` `scripts.dev`, `Procfile`, `Makefile`, `pyproject.toml` scripts, README) and propose the concrete edit needed — a new flag, a config-file change, or a code change. If there's no obvious start script, surface this as a known-issue note in the next-steps printout (step 8) so the user knows to check when they boot the server.
 
 - **"Do you anticipate using a native debugger (gdb, strace, lldb)?"** — default: no. If yes, we'll add `SYS_PTRACE` to the container's cap_add. This is looser hardening, so only opt in if you actually need it. Heuristic: if the project is C / C++ / Rust with unsafe, or if the user mentions "strace" / "perf" / "gdb" / kernel-level debugging, lean toward asking.
 

@@ -114,7 +114,12 @@ def up(force_rebuild: bool, no_host_ports: bool, port_overrides: tuple[str, ...]
     # later" flow intact for most reruns.)
     compose_args, cleanup = _build_compose_args(cfg, no_host_ports, overrides)
     try:
-        _check_port_collisions(cfg, compose_args)
+        _check_port_collisions(
+            cfg,
+            compose_args,
+            invocation_flags=_reconstruct_flags(force_rebuild, no_host_ports, overrides),
+            user_overrides=overrides,
+        )
     except subprocess.CalledProcessError:
         cleanup()
         sys.exit(1)
@@ -189,29 +194,49 @@ def _build_compose_args(
     Without port mutations, this is simply `([], lambda: None)`. With
     mutations, we generate an override compose file via `tempfile` and point
     compose at it with `-f`. The cleanup fn deletes that temp file.
+
+    `--port HOST:CONTAINER` semantics: replace any existing entry that targets
+    the same container port. `--port 5174:5173` on a project that publishes
+    `5173:5173` yields a single `5174:5173` binding, not both. This requires
+    rewriting the full ports list under `!override` because compose's default
+    list-merge would otherwise produce duplicates.
     """
     if not no_host_ports and not overrides:
         return [], lambda: None
 
-    # Build the override YAML. Compose's override-file semantics are that list
-    # fields (`ports`) merge positionally — which isn't what we want. Using
-    # `!reset` on ports (compose v2.24+) is the clean answer; we combine
-    # `ports: !reset []` with explicit new entries.
     parts: list[str] = ["services:", f"  {cfg.service_name}:"]
     if no_host_ports:
+        # User asked for no host ports at all; ignore --port too — explicit
+        # mutual exclusion would surprise users who combined them. Reset wins.
         parts.append("    ports: !reset []")
-    if overrides:
-        if not no_host_ports:
-            # When adding without resetting, just append — compose's default merge
-            # behavior will concatenate. We accept that this may produce duplicates
-            # if the user picks a port that's already in the compose file; the
-            # collision check below will catch that case.
-            parts.append("    ports:")
-        else:
-            # After a !reset, `ports:` needs to be re-specified fresh.
-            parts[-1] = "    ports: !override"
+    elif overrides:
+        # Resolve original bindings for this service, replace any whose
+        # container port matches a --port override, then append leftover
+        # overrides as additions. Use !override so compose treats this as a
+        # full replacement of the ports list.
+        original = [b for b in ports.extract_host_ports(cfg) if b.service == cfg.service_name]
+        override_by_container = {container: host for host, container in overrides}
+
+        merged: list[str] = []
+        replaced_containers: set[int] = set()
+        for b in original:
+            if b.target in override_by_container:
+                new_host = override_by_container[b.target]
+                replaced_containers.add(b.target)
+                published = new_host
+            else:
+                published = b.published
+            entry = f"{b.host_ip}:{published}:{b.target}" if b.host_ip else f"{published}:{b.target}"
+            if b.protocol and b.protocol != "tcp":
+                entry = f"{entry}/{b.protocol}"
+            merged.append(entry)
         for host, container in overrides:
-            parts.append(f"      - \"{host}:{container}\"")
+            if container not in replaced_containers:
+                merged.append(f"{host}:{container}")
+
+        parts.append("    ports: !override")
+        for entry in merged:
+            parts.append(f"      - \"{entry}\"")
 
     override_content = "\n".join(parts) + "\n"
     tmp_dir = tempfile.mkdtemp(prefix="carthage-compose-override-")
@@ -231,10 +256,53 @@ def _build_compose_args(
     return ["--extra-f-sequence"] + extra_args, cleanup
 
 
-def _check_port_collisions(cfg: CarthageConfig, compose_args: list[str]) -> None:
+def _extract_compose_files(compose_args: list[str]) -> list[str] | None:
+    """If compose_args carries an `--extra-f-sequence` block, return the list
+    of compose file paths in it. Otherwise None (caller should use defaults)."""
+    if not compose_args or compose_args[0] != "--extra-f-sequence":
+        return None
+    files: list[str] = []
+    i = 1
+    while i < len(compose_args) and compose_args[i] == "-f":
+        if i + 1 >= len(compose_args):
+            break
+        files.append(compose_args[i + 1])
+        i += 2
+    return files or None
+
+
+def _reconstruct_flags(
+    force_rebuild: bool,
+    no_host_ports: bool,
+    overrides: list[tuple[int, int]],
+) -> list[str]:
+    """Render the user's invocation flags back to a list of CLI tokens, so we
+    can echo them in error suggestions verbatim."""
+    flags: list[str] = []
+    if force_rebuild:
+        flags.append("--force-rebuild")
+    if no_host_ports:
+        flags.append("--no-host-ports")
+    for host, container in overrides:
+        flags.extend(["--port", f"{host}:{container}"])
+    return flags
+
+
+def _check_port_collisions(
+    cfg: CarthageConfig,
+    compose_args: list[str],
+    invocation_flags: list[str],
+    user_overrides: list[tuple[int, int]],
+) -> None:
     """Run the collision precheck. Exits non-zero via CalledProcessError
-    (caught by the caller) on conflict."""
-    bindings = ports.extract_host_ports(cfg)
+    (caught by the caller) on conflict.
+
+    Reads the same `-f` sequence we'll hand to `compose up`, so user-supplied
+    overrides (`--port`, `--no-host-ports`) are honored — without this, the
+    precheck would flag collisions on bindings the user already remapped.
+    """
+    extra_files = _extract_compose_files(compose_args)
+    bindings = ports.extract_host_ports(cfg, extra_compose_files=extra_files)
     if not bindings:
         return
     conflicts = ports.find_conflicts(bindings)
@@ -246,12 +314,66 @@ def _check_port_collisions(cfg: CarthageConfig, compose_args: list[str]) -> None
             f"  - host :{c.binding.published} (for service '{c.binding.service}') "
             f"is already in use by {c.owner}"
         )
+
+    # Build a copy-pasteable retry command: drop any user --port override that
+    # targets a container port we're about to remap (otherwise the suggested
+    # command would carry the conflicting binding alongside the new one).
+    remapped_container_ports = {c.binding.target for c in conflicts}
+    carried_flags = list(_reconstruct_flags_excluding(
+        invocation_flags, drop_port_for_container=remapped_container_ports,
+    ))
+    suggested_overrides: list[str] = []
+    unresolved: list[int] = []
+    for c in conflicts:
+        free = ports.find_free_host_port(c.binding.published + 1, c.binding.protocol)
+        if free is None:
+            unresolved.append(c.binding.published)
+            continue
+        suggested_overrides.extend(["--port", f"{free}:{c.binding.target}"])
+
+    if unresolved:
+        console.print(
+            f"\n[red]could not find a free host port near {', '.join(str(p) for p in unresolved)}[/red] "
+            "(scanned 100 ports upward). Free a port and retry."
+        )
+        raise subprocess.CalledProcessError(1, "port-collision")
+
+    retry_cmd = " ".join(["carthage", "up", *carried_flags, *suggested_overrides])
     console.print(
-        "\nSuggestions:\n"
-        "  - stop the offending project: `cd <that project> && carthage down`\n"
-        "  - run this project without host ports: `carthage up --no-host-ports`\n"
-        "  - use a different host port: `carthage up --port <HOST>:<CONTAINER>`"
+        "\nTo retry on different host ports, run:\n"
+        f"  [bold]{retry_cmd}[/bold]\n"
+        "[yellow]warning:[/yellow] some apps don't tolerate host-port remapping — "
+        "OAuth callbacks, webhooks, CORS allowlists, and hardcoded HMR client ports "
+        "may need updating to match the new host port."
     )
     raise subprocess.CalledProcessError(1, "port-collision")
+
+
+def _reconstruct_flags_excluding(
+    flags: list[str],
+    drop_port_for_container: set[int],
+) -> list[str]:
+    """Return `flags` with any `--port HOST:CONTAINER` pair removed when
+    CONTAINER is in `drop_port_for_container`. Used to avoid carrying a stale
+    user override into the suggested retry command when we're remapping that
+    container port to a new host port."""
+    out: list[str] = []
+    i = 0
+    while i < len(flags):
+        if flags[i] == "--port" and i + 1 < len(flags):
+            value = flags[i + 1]
+            try:
+                _, container = value.split(":", 1)
+                if int(container) in drop_port_for_container:
+                    i += 2
+                    continue
+            except ValueError:
+                pass
+            out.extend([flags[i], flags[i + 1]])
+            i += 2
+            continue
+        out.append(flags[i])
+        i += 1
+    return out
 
 
