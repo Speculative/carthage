@@ -86,6 +86,18 @@ RUN ln -s /usr/bin/batcat /usr/local/bin/bat \
 # Persistent bash history — file lives on the host at ~/.carthage/state/<slug>/.
 export HISTFILE=/commandhistory/.bash_history
 export PROMPT_COMMAND="${PROMPT_COMMAND:+$PROMPT_COMMAND$'\n'}history -a"
+# Refresh in-memory history from $HISTFILE just before fzf's Ctrl-R reads it,
+# so Ctrl-R sees commands typed in sibling tmux panes (each pane only seeds
+# its own history at startup; PROMPT_COMMAND above only appends, never reads).
+# Done as an on-demand rebind rather than `history -n` in PROMPT_COMMAND so
+# `!!` and arrow-up keep their per-shell semantics. Must come after fzf's
+# key-bindings.bash (which binds \C-r itself); `bind` is interactive-only,
+# hence the [[ $- == *i* ]] guard.
+if [[ $- == *i* ]] && [ -f /usr/share/doc/fzf/examples/key-bindings.bash ]; then
+  bind -m emacs-standard -x '"\C-r": "history -n; __fzf_history__"'
+  bind -m vi-command     -x '"\C-r": "history -n; __fzf_history__"'
+  bind -m vi-insert      -x '"\C-r": "history -n; __fzf_history__"'
+fi
 EOF
 
 # --- Node.js LTS -----------------------------------------------------------
