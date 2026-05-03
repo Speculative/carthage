@@ -5,8 +5,9 @@
 # What lives here:
 #   - git, tmux, curl, openssh-client, jq, ripgrep, ca-certificates
 #   - Python 3.12 + uv
-#   - Node.js LTS (required by Claude Code)
-#   - Claude Code CLI
+#   - Node.js LTS (kept on PATH for projects that FROM this image; Claude Code
+#     itself no longer needs it — see Claude install step below)
+#   - Claude Code CLI (native installer — auto-updates in the background)
 #   - /etc/carthage/SANDBOX.md (sandbox-awareness document)
 #   - a non-root `carthage` user whose UID/GID match the host
 #
@@ -87,16 +88,15 @@ export HISTFILE=/commandhistory/.bash_history
 export PROMPT_COMMAND="${PROMPT_COMMAND:+$PROMPT_COMMAND$'\n'}history -a"
 EOF
 
-# --- Node.js LTS (for Claude Code) -----------------------------------------
+# --- Node.js LTS -----------------------------------------------------------
+# Claude Code itself no longer needs Node — we install via the native
+# installer below. Node is retained for projects that FROM this image
+# expecting it (removing it would be a breaking change; defer to v2.0).
 RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - \
  && apt-get install -y --no-install-recommends nodejs \
  && rm -rf /var/lib/apt/lists/* \
  && node --version \
  && npm --version
-
-# --- Claude Code CLI -------------------------------------------------------
-RUN npm install -g @anthropic-ai/claude-code \
- && claude --version
 
 # --- uv (system-wide; users get it on PATH via /usr/local/bin) -------------
 RUN curl -LsSf https://astral.sh/uv/install.sh | \
@@ -106,6 +106,8 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | \
 # --- Non-root user matching host UID/GID -----------------------------------
 # On Ubuntu 24.04 the default `ubuntu` user already claims UID 1000. If the
 # host's UID/GID is 1000 we rename/repurpose it; otherwise we create fresh.
+# Created BEFORE the Claude install below because the native installer
+# writes to $HOME/.local and must run as the target user.
 RUN set -eux; \
     if getent passwd "${HOST_UID}" >/dev/null; then \
         existing_user=$(getent passwd "${HOST_UID}" | cut -d: -f1); \
@@ -122,6 +124,19 @@ RUN set -eux; \
     groupadd --gid "${HOST_GID}" carthage; \
     useradd --uid "${HOST_UID}" --gid "${HOST_GID}" \
             --shell /bin/bash --create-home carthage
+
+# --- Claude Code CLI (native installer) ------------------------------------
+# We use the native installer (not `npm i -g`) so the in-container CLI can
+# self-update in the background. The installer writes the launcher to
+# ~/.local/bin/claude and versioned binaries to ~/.local/share/claude/, both
+# user-owned and writable — so when Claude Code's background updater runs
+# inside the container, it has permission to swap in a new version. The npm
+# package does not auto-update; the native installer does. The install MUST
+# run as the carthage user so the files land under that user's $HOME.
+USER carthage
+RUN curl -fsSL https://claude.ai/install.sh | bash \
+ && claude --version
+USER root
 
 # --- Persistent shell-history mount point ---------------------------------
 # The CLI bind-mounts ~/.carthage/state/<slug>/ on the host onto this path.
