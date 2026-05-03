@@ -23,8 +23,11 @@ fi
 # `claude --dangerously-skip-permissions` is appropriate here because the
 # sandbox *is* the permission boundary — prompting inside adds no safety.
 if ! tmux has-session -t claude 2>/dev/null; then
+    # `exec` so the shell tmux spawns replaces itself with claude in place.
+    # Without `exec`, the pane's process group leader is bash and tmux's
+    # auto-rename reports the window as "bash" instead of "claude".
     tmux new-session -d -s claude \
-        'claude --dangerously-skip-permissions; exec bash'
+        'exec claude --dangerously-skip-permissions'
     log "started tmux session 'claude'"
 else
     log "tmux session 'claude' already exists"
