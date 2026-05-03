@@ -45,32 +45,88 @@ Look for the usual suspects at the project root:
 
 If multiple are present or the detection is ambiguous, **ask the user** which runtime(s) should be installed in the container. Don't guess — getting this wrong means a broken build.
 
-### 3. Ask about services, ports, and native debugging
+### 3. Investigate the project, then confirm a proposed annex spec
 
-Use the available elicitation tool. These are the questions:
+Don't make the user enumerate their own dependencies — most users haven't thought through "do I need Postgres" abstractly, but the answer is usually visible in the repo. Investigate first; ask only what the code can't tell you.
 
-- **"Does this project need a database? If so, which?"** — offer Postgres, MySQL, Redis, None, Other.
+#### 3a. Investigate
 
-- **"Any ports you want *published to the host* for local browser testing?"** — e.g., `3000`, `8000`, `5173`. Default: **none**. Be explicit about the tradeoff:
-  - Published ports let you open `localhost:3000` in your browser on the host.
-  - They also are the only way another Carthage project could collide with yours — `carthage up` will refuse to start if another project already owns a port you've asked for. (When that happens, the CLI suggests a copy-pasteable `carthage up --port HOST:CONTAINER` retry.)
-  - Inter-service networking works regardless (the `dev` container reaches `redis`, `postgres`, etc. by service name over the compose network).
+**Read the project broadly enough to make an informed proposal about every aspect of the dev environment that affects the container build or runtime.** This is open-ended on purpose: anything that would make the difference between "the user runs `carthage attach` and can immediately work" and "the user hits a wall and has to re-annex" is in scope. Think about the whole development flow — building, running, testing, debugging, deploying, talking to external services — and ask: what does each step need from the container?
 
-  **Bind-interface gotcha — important.** Most dev servers (Vite, Next, Django runserver, Rails, `python -m http.server`) default to binding `127.0.0.1` *inside the container*, which is a different loopback than the host's. Docker's `-p` only forwards traffic from the container's external interface, so a server bound to container-side 127.0.0.1 is unreachable from the host even when the port is "published." Symptom: `curl localhost:3000` from the host returns connection refused while the server is clearly running inside the container.
+For each potential factor, decide whether to include it (with a one-line justification you can show the user), exclude it, or flag as uncertain.
 
-  Whenever the user opts into published ports, **figure out for each port what process will serve it and how that process gets told to bind on `0.0.0.0`** (all interfaces). Don't assume — different tools have different switches:
-  - Vite: `vite --host` (shorthand for `--host 0.0.0.0`), or `server.host: '0.0.0.0'` in `vite.config.{ts,js}`.
-  - Next.js: `next dev -H 0.0.0.0` (or `--hostname 0.0.0.0`).
-  - Django: `python manage.py runserver 0.0.0.0:8000`.
-  - Rails: `bin/rails server -b 0.0.0.0`.
-  - Python http.server: `python -m http.server --bind 0.0.0.0`.
-  - Express / FastAPI / Uvicorn / Flask: usually default to `0.0.0.0` already, but verify the project's start script doesn't pin `127.0.0.1`/`localhost`.
+A non-exhaustive **example** list of factors that often come up — useful as a starting checklist, but the project may need things outside this list and may not need things on it:
 
-  Look at the project's start script (`package.json` `scripts.dev`, `Procfile`, `Makefile`, `pyproject.toml` scripts, README) and propose the concrete edit needed — a new flag, a config-file change, or a code change. If there's no obvious start script, surface this as a known-issue note in the next-steps printout (step 8) so the user knows to check when they boot the server.
+- **Sidecar services** (Postgres, MySQL, Redis, RabbitMQ, Elasticsearch, MinIO, …): look at `docker-compose.yml` if one exists, ORM config (`alembic.ini`, `prisma/schema.prisma`, `config/database.yml`, `settings.py`), env templates (`.env.example`), and connection-string usage in code.
+- **Native debugging** (`SYS_PTRACE` cap_add): C/C++/Rust-with-unsafe projects, or anything where strace/gdb/lldb shows up in the README, scripts, or test setup.
+- **System packages** beyond the base image: native compilers (`build-essential`, `pkg-config`), library headers (`libpq-dev`, `libssl-dev`, `libffi-dev`), media tooling (`ffmpeg`, `imagemagick`, `tesseract`), browser automation (`chromium`, `playwright` deps), CLI tools the project shells out to (`awscli`, `gh`, `kubectl`, `terraform`).
+- **Runtime versions** the base image doesn't ship: a `.python-version`, `.nvmrc`, `.tool-versions`, `rust-toolchain.toml`, or a `requires-python`/`engines` constraint that excludes the base default. **The base image ships Python 3.12 and Node 20.x.** `uv` is also present and fetches alternate Pythons on demand, so a `requires-python` mismatch is usually a soft constraint, not a hard requirement to install pyenv.
+- **Build/test toolchain quirks**: `pre-commit` hooks that need specific binaries, GPU/CUDA requirements, anything pinned in CI that's invisible from the manifest alone.
+- **Extra host paths the project reads or writes outside its own directory.** Many dev workflows reach across the filesystem — a sibling repo the user is co-developing, a checked-out fork mounted as a build dependency, a shared dataset/asset directory, or per-machine credentials. The `.carthage/` mount only covers the project root; anything outside it is invisible from the container unless explicitly mounted. Look for hard-coded absolute paths in code, config, and scripts (e.g. `/cpython/build-opt/python`, `~/data/...`); references to "the X repo" / "checkout Y next to this one" in the README; and CLI tools or build steps that assume a sibling working tree.
 
-- **"Do you anticipate using a native debugger (gdb, strace, lldb)?"** — default: no. If yes, we'll add `SYS_PTRACE` to the container's cap_add. This is looser hardening, so only opt in if you actually need it. Heuristic: if the project is C / C++ / Rust with unsafe, or if the user mentions "strace" / "perf" / "gdb" / kernel-level debugging, lean toward asking.
+Don't stop at this list. **Inventory the test suite (`tests/`, `test/`, `e2e/`, `pytest`/`jest`/`vitest` config) and the CI pipeline (`.github/workflows/`, `.gitlab-ci.yml`, `Makefile`, top-level `scripts/`, `bin/`)** — these are where build-time deps that don't appear in the runtime manifest hide. Examples: `playwright install-deps chromium` for headless e2e, `tesseract-ocr` for OCR fixtures, CUDA toolkit for GPU tests. The CI config tells you what an outside machine has to install to make the project work; that's a strong proxy for what the dev container needs. Also read the README, `CONTRIBUTING.md`, and any `HANDOFF.md` / design notes for things that don't fit anywhere else.
 
-- **"Anything else that should be pre-installed in the dev image?"** — free-text (e.g. "gdb", "awscli", "the AWS CLI with our org's config").
+#### 3b. Ask about workflow-shaped intent: ports and extra host mounts
+
+Two dimensions can't be derived from the code alone — they depend on how the user develops, not what the code says. Ask both, and frame each so the user can answer with concrete paths/numbers, not abstract yes/no.
+
+**Ports.** Whether the user wants to expose ports to the host browser is a developer-workflow preference, not a code property:
+
+> **"Any ports you want *published to the host* for local browser testing?"** — e.g., `3000`, `8000`, `5173`. Default: **none**.
+
+Tradeoff to surface:
+- Published ports let you open `localhost:3000` in your browser on the host.
+- They also are the only way another Carthage project could collide with yours — `carthage up` will refuse to start if another project already owns a port you've asked for. (When that happens, the CLI suggests a copy-pasteable `carthage up --port HOST:CONTAINER` retry.)
+- Inter-service networking works regardless (the `dev` container reaches `redis`, `postgres`, etc. by service name over the compose network).
+
+**Bind-interface gotcha — important.** Most dev servers (Vite, Next, Django runserver, Rails, `python -m http.server`) default to binding `127.0.0.1` *inside the container*, which is a different loopback than the host's. Docker's `-p` only forwards traffic from the container's external interface, so a server bound to container-side 127.0.0.1 is unreachable from the host even when the port is "published." Symptom: `curl localhost:3000` from the host returns connection refused while the server is clearly running inside the container.
+
+Whenever the user opts into published ports, **figure out for each port what process will serve it and how that process gets told to bind on `0.0.0.0`** (all interfaces). Don't assume — different tools have different switches:
+- Vite: `vite --host` (shorthand for `--host 0.0.0.0`), or `server.host: '0.0.0.0'` in `vite.config.{ts,js}`.
+- Next.js: `next dev -H 0.0.0.0` (or `--hostname 0.0.0.0`).
+- Django: `python manage.py runserver 0.0.0.0:8000`.
+- Rails: `bin/rails server -b 0.0.0.0`.
+- Python http.server: `python -m http.server --bind 0.0.0.0`.
+- Express / FastAPI / Uvicorn / Flask: usually default to `0.0.0.0` already, but verify the project's start script doesn't pin `127.0.0.1`/`localhost`.
+
+Look at the project's start script (`package.json` `scripts.dev`, `Procfile`, `Makefile`, `pyproject.toml` scripts, README) and propose the concrete edit needed — a new flag, a config-file change, or a code change. If there's no obvious start script, surface this as a known-issue note in the next-steps printout (step 8) so the user knows to check when they boot the server.
+
+**Extra host mounts.** The project root is mounted at `/workspace` automatically. But many workflows need *additional* host paths visible inside the container — a sibling repo, a vendored fork, a shared dataset, an assets directory. If you found hard-coded absolute paths or "see also: ../foo" references during 3a, propose them and ask. If you didn't, still ask — users often forget about a `~/data/` directory or a sibling checkout until they hit the wall:
+
+> **"Any host paths outside this project the dev container will need to reach?"** Frame it concretely:
+> - **Code outside the project** you want to read or edit alongside this one (a sibling repo, a checked-out fork or library you're co-developing).
+> - **Data directories** the project reads from or writes to (datasets, fixtures, large media, persistent caches).
+> - **Anywhere code in this project reaches outside its own directory** (hard-coded paths in scripts, env vars pointing at host paths, "extract this tarball to `/srv/...`" in setup docs).
+>
+> Default: **none.** Each extra mount should be specified as `<host path>:<container path>` plus `:ro` for read-only or `:rw` for read-write. Read-only is safer when you don't intend to write — e.g. mounting a sibling repo just to grep through it.
+
+If you proposed any from your investigation, list them in the spec table. If the user volunteers more, add them.
+
+#### 3c. Present the proposed spec and confirm
+
+Show the user a single consolidated proposal — not one question at a time. Format it so they can scan and correct in one round:
+
+```
+Based on the project, here's what I'm proposing for the dev container:
+
+  Sidecars:        postgres:16  (seen in docker-compose.yml + alembic.ini)
+                   redis:7      (used by tasks.py worker queue)
+  System packages: libpq-dev, build-essential  (psycopg compiles from source)
+                   awscli       (scripts/deploy.sh shells out to it)
+  Native debugging: no          (pure Python, no gdb/strace usage)
+  Runtime:         Python 3.12  (matches base image; pyenv not needed)
+  Published ports: 8000 (FastAPI) — note: uvicorn already binds 0.0.0.0
+                   5173 (Vite)  — needs `--host` added to `npm run dev`
+  Extra host mounts: ~/data/corpus:/data/corpus:ro
+                                  (scripts/eval.py reads /data/corpus/*.jsonl)
+                   (need to ask: anything else outside the project?)
+
+Anything wrong, missing, or that you want to drop?
+```
+
+For uncertain items, mark them explicitly (`?` or "uncertain — flag for review") rather than silently picking. Accept free-form corrections; iterate one more round if the user adds something substantial.
+
+Don't ask permission for *every* item individually — that's the trap the old elicitation flow fell into. The user is correcting a proposal, not authoring one from scratch.
 
 ### 4. Check for existing files
 
@@ -101,7 +157,7 @@ Templates live alongside this skill at `templates/`. Render them with the values
   - `pids_limit: 1000`
   - `mem_limit: ${CARTHAGE_MEM_LIMIT:-0}`, `cpus: ${CARTHAGE_CPUS:-0}` — both resolved by the CLI at `up` time; 0 means unlimited.
   - `environment: { CARTHAGE: "1", CARTHAGE_PROJECT: "<slug>" }` — `CARTHAGE_PROJECT` is read by the in-container tmux status bar.
-  - Mounts: `..:/workspace`, `${HOME}/.claude:/home/carthage/.claude`, `${HOME}/.claude.json:/home/carthage/.claude.json` (rw — Claude Code login state lives here, sibling of `.claude/`), `${HOME}/.gitconfig:/home/carthage/.gitconfig:ro`, `${HOME}/.carthage/state/<slug>:/commandhistory:rw` (per-project shell-history dir; CLI creates the host side on `up`)
+  - Mounts: `..:/workspace`, `${HOME}/.claude:/home/carthage/.claude`, `${HOME}/.claude.json:/home/carthage/.claude.json` (rw — Claude Code login state lives here, sibling of `.claude/`), `${HOME}/.gitconfig:/home/carthage/.gitconfig:ro`, `${HOME}/.carthage/state/<slug>:/commandhistory:rw` (per-project shell-history dir; CLI creates the host side on `up`). Append any extra host mounts the user confirmed in step 3b (preserve their `:ro`/`:rw` mode and the exact host path — don't rewrite to relative paths).
   - `working_dir: /workspace`, `init: true`, `tty: true`, `stdin_open: true`
   - Labels: `carthage.managed=true`, `carthage.project=<slug>`, `carthage.role=dev`. Sidecars get `carthage.role=postgres` / `redis` / etc.
   - **No** `ports:` block unless the user opted into published ports in step 3.
@@ -144,4 +200,4 @@ End with:
 - **Don't start the container.** That's the user's next manual step.
 - **Don't install `carthage-base`** or prebuild. The first `carthage up` pulls and builds.
 - **Don't install the `carthage` CLI.** Print instructions if it's missing.
-- **Don't add project-specific runtimes or ports the user didn't confirm.** If detection was ambiguous, you asked in step 3 — trust that answer over your guess.
+- **Don't add project-specific runtimes, sidecars, system packages, or ports that weren't in the spec the user confirmed in step 3c.** If you find new evidence mid-generation that something else is needed, loop back and re-confirm — don't silently expand the scope.
