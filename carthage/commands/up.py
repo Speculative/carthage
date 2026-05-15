@@ -32,6 +32,11 @@ console = Console()
     help="Skip the staleness check and rebuild unconditionally.",
 )
 @click.option(
+    "--offline",
+    is_flag=True,
+    help="Skip the base-image pull; use whatever is cached locally.",
+)
+@click.option(
     "--no-host-ports",
     is_flag=True,
     help="Strip all host-side port bindings for this run.",
@@ -46,7 +51,7 @@ console = Console()
         "Explicit only — we never silently remap."
     ),
 )
-def up(force_rebuild: bool, no_host_ports: bool, port_overrides: tuple[str, ...]) -> None:
+def up(force_rebuild: bool, offline: bool, no_host_ports: bool, port_overrides: tuple[str, ...]) -> None:
     """Start the project container (rebuild first if out of date)."""
     try:
         cfg = load_config()
@@ -76,12 +81,18 @@ def up(force_rebuild: bool, no_host_ports: bool, port_overrides: tuple[str, ...]
     # `compute_expected_hash` reads the base image's digest from the local
     # cache; without this pull, an upstream `:vN` rebuild looks like a no-op
     # to the staleness check and the user runs an old base indefinitely.
-    ok, detail = image.pull_base_image(cfg.base_image)
-    if not ok:
+    if offline:
         console.print(
-            f"[yellow]note:[/yellow] could not refresh {cfg.base_image} ({detail}); "
-            "using local cache. Run `carthage build --pull` once you're online."
+            f"[yellow]note:[/yellow] --offline: skipping pull of {cfg.base_image}; "
+            "using local cache."
         )
+    else:
+        ok, detail = image.pull_base_image(cfg.base_image)
+        if not ok:
+            console.print(
+                f"[yellow]note:[/yellow] could not refresh {cfg.base_image} ({detail}); "
+                "using local cache. Run `carthage build --pull` once you're online."
+            )
 
     # --- Build (conditionally) ---
     expected_hash = image.compute_expected_hash(cfg)
@@ -117,7 +128,7 @@ def up(force_rebuild: bool, no_host_ports: bool, port_overrides: tuple[str, ...]
         _check_port_collisions(
             cfg,
             compose_args,
-            invocation_flags=_reconstruct_flags(force_rebuild, no_host_ports, overrides),
+            invocation_flags=_reconstruct_flags(force_rebuild, offline, no_host_ports, overrides),
             user_overrides=overrides,
         )
     except subprocess.CalledProcessError:
@@ -273,6 +284,7 @@ def _extract_compose_files(compose_args: list[str]) -> list[str] | None:
 
 def _reconstruct_flags(
     force_rebuild: bool,
+    offline: bool,
     no_host_ports: bool,
     overrides: list[tuple[int, int]],
 ) -> list[str]:
@@ -281,6 +293,8 @@ def _reconstruct_flags(
     flags: list[str] = []
     if force_rebuild:
         flags.append("--force-rebuild")
+    if offline:
+        flags.append("--offline")
     if no_host_ports:
         flags.append("--no-host-ports")
     for host, container in overrides:
