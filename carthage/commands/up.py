@@ -23,7 +23,7 @@ from carthage import __version__, annex_template_is_outdated, compose, image, po
 from carthage.config import CarthageConfig, ConfigError, load_config
 from carthage.personal_config import PersonalConfigResult, load_personal_config
 from carthage.personal_image import build_personal_image, personal_image_ref
-from carthage.runtime import filter_disabled_overlay, render_compose_overlay_service_parts
+from carthage.runtime import filter_disabled_overlay, render_compose_overlay
 
 console = Console()
 
@@ -242,12 +242,58 @@ def _build_compose_args(
     rewriting the full ports list under `!override` because compose's default
     list-merge would otherwise produce duplicates.
     """
-    runtime_parts = _personal_compose_override_parts(cfg, personal)
-    if not no_host_ports and not overrides and not runtime_parts:
+    runtime_content = _personal_compose_override_content(cfg, personal)
+    port_content = _port_compose_override_content(cfg, no_host_ports, overrides)
+    if runtime_content is None and port_content is None:
         return [], lambda: None
 
+    tmp_dir = tempfile.mkdtemp(prefix="carthage-compose-override-")
+    override_files: list[str] = []
+    if runtime_content is not None:
+        runtime_path = Path(tmp_dir) / "runtime.json"
+        runtime_path.write_text(runtime_content)
+        override_files.append(str(runtime_path))
+    if port_content is not None:
+        ports_path = Path(tmp_dir) / "ports.yaml"
+        ports_path.write_text(port_content)
+        override_files.append(str(ports_path))
+
+    extra_args = ["-f", str(cfg.compose_file)]
+    for override_file in override_files:
+        extra_args.extend(["-f", override_file])
+
+    def cleanup() -> None:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    # Note: extra_args intentionally *replaces* the default -f args that
+    # compose.py injects — we rebuild the full `-f` sequence here. This
+    # matters because compose.run() always inserts its own `-f` too. To
+    # avoid duplication, we return extra args that we'll prepend, and
+    # compose.run sees them and skips its own default. See compose.run.
+    return ["--extra-f-sequence"] + extra_args, cleanup
+
+
+def _personal_compose_override_content(
+    cfg: CarthageConfig,
+    personal: PersonalConfigResult | None,
+) -> str | None:
+    if personal is None:
+        return None
+
+    disabled = set(cfg.personal_disabled)
+    overlay = filter_disabled_overlay(personal.config.runtime_overlay, disabled)
+    return render_compose_overlay(cfg.service_name, overlay)
+
+
+def _port_compose_override_content(
+    cfg: CarthageConfig,
+    no_host_ports: bool,
+    overrides: list[tuple[int, int]],
+) -> str | None:
+    if not no_host_ports and not overrides:
+        return None
+
     parts: list[str] = ["services:", f"  {cfg.service_name}:"]
-    parts.extend(runtime_parts)
     if no_host_ports:
         # User asked for no host ports at all; ignore --port too — explicit
         # mutual exclusion would surprise users who combined them. Reset wins.
@@ -280,35 +326,7 @@ def _build_compose_args(
         parts.append("    ports: !override")
         for entry in merged:
             parts.append(f"      - \"{entry}\"")
-
-    override_content = "\n".join(parts) + "\n"
-    tmp_dir = tempfile.mkdtemp(prefix="carthage-compose-override-")
-    override_path = Path(tmp_dir) / "override.yaml"
-    override_path.write_text(override_content)
-
-    extra_args = ["-f", str(cfg.compose_file), "-f", str(override_path)]
-
-    def cleanup() -> None:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-
-    # Note: extra_args intentionally *replaces* the default -f args that
-    # compose.py injects — we rebuild the full `-f` sequence here. This
-    # matters because compose.run() always inserts its own `-f` too. To
-    # avoid duplication, we return extra args that we'll prepend, and
-    # compose.run sees them and skips its own default. See compose.run.
-    return ["--extra-f-sequence"] + extra_args, cleanup
-
-
-def _personal_compose_override_parts(
-    cfg: CarthageConfig,
-    personal: PersonalConfigResult | None,
-) -> list[str]:
-    if personal is None:
-        return []
-
-    disabled = set(cfg.personal_disabled)
-    overlay = filter_disabled_overlay(personal.config.runtime_overlay, disabled)
-    return render_compose_overlay_service_parts(overlay)
+    return "\n".join(parts) + "\n"
 
 
 def _extract_compose_files(compose_args: list[str]) -> list[str] | None:

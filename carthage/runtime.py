@@ -60,32 +60,17 @@ def render_compose_overlay(service_name: str, overlay: RuntimeOverlay) -> str | 
     if overlay.is_empty:
         return None
 
-    parts: list[str] = ["services:", f"  {service_name}:"]
+    service: dict[str, object] = {}
     if overlay.environment:
-        parts.append("    environment:")
-        for item in overlay.environment:
-            parts.append(f"      {item.name}: {_yaml_scalar(item.value)}")
+        service["environment"] = {item.name: item.value for item in overlay.environment}
     if overlay.mounts:
-        parts.append("    volumes:")
-        for mount in overlay.mounts:
-            parts.extend([
-                "      - type: bind",
-                f"        source: {_yaml_scalar(mount.source)}",
-                f"        target: {_yaml_scalar(mount.target)}",
-                f"        read_only: {'true' if mount.read_only else 'false'}",
-            ])
-    return "\n".join(parts) + "\n"
-
-
-def render_compose_overlay_service_parts(overlay: RuntimeOverlay) -> list[str]:
-    """Render only the service body lines for callers composing a larger
-    temporary override file, such as `carthage up --port`."""
-    rendered = render_compose_overlay("dev", overlay)
-    if rendered is None:
-        return []
-    lines = rendered.splitlines()
-    return lines[2:]
-
-
-def _yaml_scalar(value: str) -> str:
-    return json.dumps(value)
+        service["volumes"] = [
+            {
+                "type": "bind",
+                "source": mount.source,
+                "target": mount.target,
+                "read_only": mount.read_only,
+            }
+            for mount in overlay.mounts
+        ]
+    return json.dumps({"services": {service_name: service}}, indent=2) + "\n"

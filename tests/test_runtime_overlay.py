@@ -1,3 +1,5 @@
+import json
+
 from carthage.runtime import (
     RuntimeEnv,
     RuntimeMount,
@@ -5,7 +7,6 @@ from carthage.runtime import (
     filter_disabled_overlay,
     merge_overlays,
     render_compose_overlay,
-    render_compose_overlay_service_parts,
 )
 
 
@@ -55,23 +56,20 @@ def test_render_compose_overlay_quotes_values():
 
     rendered = render_compose_overlay("dev", overlay)
 
-    assert rendered == (
-        "services:\n"
-        "  dev:\n"
-        "    environment:\n"
-        '      GREETING: "hello \\"world\\""\n'
-        "    volumes:\n"
-        "      - type: bind\n"
-        '        source: "/host path/notes"\n'
-        '        target: "/home/carthage/.notes"\n'
-        "        read_only: true\n"
-    )
-
-
-def test_render_compose_overlay_service_parts_omits_header():
-    overlay = RuntimeOverlay(environment=(RuntimeEnv("editor", "EDITOR", "vim"),))
-
-    assert render_compose_overlay_service_parts(overlay) == [
-        "    environment:",
-        '      EDITOR: "vim"',
-    ]
+    assert json.loads(rendered) == {
+        "services": {
+            "dev": {
+                "environment": {
+                    "GREETING": 'hello "world"',
+                },
+                "volumes": [
+                    {
+                        "type": "bind",
+                        "source": "/host path/notes",
+                        "target": "/home/carthage/.notes",
+                        "read_only": True,
+                    }
+                ],
+            }
+        }
+    }

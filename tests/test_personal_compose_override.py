@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from carthage.commands.up import _build_compose_args
@@ -65,18 +66,27 @@ def test_personal_compose_override_adds_mounts_and_environment(tmp_path):
     args, cleanup = _build_compose_args(cfg, False, [], personal)
     try:
         override_path = Path(args[-1])
-        content = override_path.read_text()
+        content = json.loads(override_path.read_text())
     finally:
         cleanup()
 
     assert args[:2] == ["--extra-f-sequence", "-f"]
-    assert "    environment:\n      EDITOR: \"vim\"" in content
-    assert "CARTHAGE: \"nope\"" not in content
-    assert 'source: "/tmp/notes"' in content
-    assert 'target: "/home/carthage/.notes"' in content
-    assert "read_only: true" in content
-    assert 'source: "/tmp/scratch"' in content
-    assert "read_only: false" in content
+    service = content["services"]["dev"]
+    assert service["environment"] == {"EDITOR": "vim"}
+    assert service["volumes"] == [
+        {
+            "type": "bind",
+            "source": "/tmp/notes",
+            "target": "/home/carthage/.notes",
+            "read_only": True,
+        },
+        {
+            "type": "bind",
+            "source": "/tmp/scratch",
+            "target": "/scratch",
+            "read_only": False,
+        },
+    ]
 
 
 def test_project_can_disable_personal_items_by_id(tmp_path):
@@ -94,10 +104,37 @@ disable = ["notes", "editor"]
 
     args, cleanup = _build_compose_args(cfg, False, [], personal)
     try:
-        content = Path(args[-1]).read_text()
+        content = json.loads(Path(args[-1]).read_text())
     finally:
         cleanup()
 
-    assert "EDITOR" not in content
-    assert "/tmp/notes" not in content
-    assert "/tmp/scratch" in content
+    service = content["services"]["dev"]
+    assert "environment" not in service
+    assert service["volumes"] == [
+        {
+            "type": "bind",
+            "source": "/tmp/scratch",
+            "target": "/scratch",
+            "read_only": False,
+        },
+    ]
+
+
+def test_personal_and_port_overrides_are_separate_files(tmp_path):
+    _write_project(tmp_path)
+    personal_path = tmp_path / "personal.toml"
+    _write_personal(personal_path)
+    cfg = load_config(tmp_path)
+    personal = load_personal_config(personal_path)
+
+    args, cleanup = _build_compose_args(cfg, True, [], personal)
+    try:
+        assert args[0] == "--extra-f-sequence"
+        override_files = args[4::2]
+        assert [Path(path).name for path in override_files] == ["runtime.json", "ports.yaml"]
+        assert json.loads(Path(override_files[0]).read_text())["services"]["dev"]["environment"] == {
+            "EDITOR": "vim"
+        }
+        assert "ports: !reset []" in Path(override_files[1]).read_text()
+    finally:
+        cleanup()
