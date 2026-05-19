@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 import tempfile
+import os
 from pathlib import Path
 
 from carthage import EXPECTED_BASE_IMAGE_TAG, PERSONAL_BASE_IMAGE_REPO
@@ -11,7 +12,10 @@ from carthage.personal_config import PersonalConfig
 
 
 def personal_image_ref(tag: str = EXPECTED_BASE_IMAGE_TAG) -> str:
-    return f"{PERSONAL_BASE_IMAGE_REPO}:{tag}"
+    # Test hook: e2e tests isolate personal images from the user's real
+    # carthage-base-personal tag and clean up the generated repo afterward.
+    repo = os.environ.get("CARTHAGE_PERSONAL_IMAGE_REPO", PERSONAL_BASE_IMAGE_REPO)
+    return f"{repo}:{tag}"
 
 
 def render_personal_image_dockerfile(base_image: str, config: PersonalConfig) -> str:

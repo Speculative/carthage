@@ -6,6 +6,12 @@ def test_personal_image_ref_defaults_to_expected_tag():
     assert personal_image_ref() == "carthage-base-personal:v1"
 
 
+def test_personal_image_ref_can_be_overridden(monkeypatch):
+    monkeypatch.setenv("CARTHAGE_PERSONAL_IMAGE_REPO", "carthage-base-personal-e2e-test")
+
+    assert personal_image_ref() == "carthage-base-personal-e2e-test:v1"
+
+
 def test_render_personal_image_without_packages():
     dockerfile = render_personal_image_dockerfile(
         "ghcr.io/speculative/carthage-base:v1",
