@@ -8,9 +8,9 @@ Carthage ships three things from this one repo:
 
 1. **The CLI** — `carthage-cli` Python package, versioned in [pyproject.toml](pyproject.toml).
 2. **The Claude skills** under [skill/](skill/) — bundled *into the CLI wheel* via [`tool.hatch.build.targets.wheel.force-include`](pyproject.toml).
-3. **The `carthage-base` Docker image** — built from [base/](base/), published to GHCR by [.github/workflows/publish-base.yml](.github/workflows/publish-base.yml) on every `v*.*.*` git tag push.
+3. **The `carthage-base` Docker image** — built from [base/](base/), published to GHCR by [.github/workflows/publish-base.yml](.github/workflows/publish-base.yml) on every `v*.*.*` git tag push. Users normally build a local `carthage-base-personal:<major>` layer on top with `carthage fortify`.
 
-The CLI and the skills share one version because they're physically the same wheel. The base image is published from the same commit but is consumed independently (projects pin `:v1` in their `.carthage/Dockerfile`).
+The CLI and the skills share one version because they're physically the same wheel. The base image is published from the same commit but is consumed independently. New projects normally inherit from `carthage-base-personal:v1`; existing older projects may still inherit directly from `ghcr.io/speculative/carthage-base:v1`.
 
 ## The trap: skill-template changes ARE CLI changes
 
@@ -50,7 +50,7 @@ Real example (v1.0.1): a one-line fix to [skill/carthage-annex/templates/docker-
 
 | If you're changing… | You need to… |
 |---|---|
-| Anything in [base/](base/) (Dockerfile, tmux.conf, entrypoint.sh, SANDBOX.md) | Push a `v*.*.*` tag — CI publishes the new base image. Users pick it up with `carthage build --pull`. |
+| Anything in [base/](base/) (Dockerfile, tmux.conf, entrypoint.sh, SANDBOX.md) | Push a `v*.*.*` tag — CI publishes the new base image. Users pick it up with `carthage build --pull`; projects using `carthage-base-personal` rebuild that local layer first. |
 | Anything in [skill/](skill/) (templates, SKILL.md instructions) | Bump CLI version. Users pick it up with `uv tool upgrade carthage-cli && carthage fortify`. **Existing already-annexed projects do NOT auto-update** — their `.carthage/` files were generated from the *old* template and are committed in their repo. They need a re-annex (`/carthage-annex --upgrade`) or a manual edit. |
 | Anything in [carthage/](carthage/) (CLI code) | Bump CLI version. `uv tool upgrade carthage-cli`. |
 | Anything in [tests/](tests/) | Nothing user-visible. No version bump needed. |
