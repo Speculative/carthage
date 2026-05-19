@@ -106,6 +106,24 @@ There are several upgrade paths because the three artifacts (CLI, base image, in
 
 `carthage survey` surfaces version-alignment drift across all of these axes (CLI, skills, project schema, Dockerfile `FROM`).
 
+## Personal config
+
+Carthage also looks for user-level config at `~/.carthage/config.toml`. This is
+reserved for preferences that apply across all of your Carthage projects. In
+the current release it is reported by `carthage fortify` and `carthage survey`
+but does not change container behavior yet.
+
+Minimal file:
+
+```toml
+[carthage]
+personal_config_version = "1"
+```
+
+Malformed or unsupported personal config is reported as a warning and ignored.
+Project-local `.carthage/config.toml` remains the source of truth for each
+project.
+
 ## Troubleshooting
 
 `carthage survey` first — it catches the common issues (Docker not running, GHCR unreachable, `~/.claude` missing, skill version drift). `carthage survey --deep` additionally probes Claude auth inside a test container.

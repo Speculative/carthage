@@ -43,6 +43,7 @@ from carthage import (
     annex_template_is_outdated,
 )
 from carthage.config import ConfigError, load_config
+from carthage.personal_config import describe_personal_config, load_personal_config
 from carthage.skills import MANAGED_SKILLS, read_skill_version
 
 console = Console()
@@ -106,6 +107,12 @@ def check_uid_gid() -> tuple[bool, str]:
     if uid == 0:
         return False, "you are running as root (UID 0). Carthage expects a regular user."
     return True, f"uid={uid} gid={gid}"
+
+
+@_check("personal config")
+def check_personal_config() -> tuple[bool, str]:
+    result = load_personal_config()
+    return True, describe_personal_config(result)
 
 
 @_check("installed skills match CLI version")
@@ -284,6 +291,7 @@ def survey(deep: bool, base_image: str | None) -> None:
     if docker_up:
         results.append(check_compose_v2())
     results.append(check_claude_dir())
+    results.append(check_personal_config())
     results.append(check_uid_gid())
     results.append(check_skill_versions())
 

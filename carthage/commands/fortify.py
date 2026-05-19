@@ -22,6 +22,7 @@ import click
 from rich.console import Console
 
 from carthage import __version__
+from carthage.personal_config import describe_personal_config, load_personal_config
 from carthage.skills import MANAGED_SKILLS, SKILLS_DIR, read_skill_version
 
 console = Console()
@@ -154,6 +155,9 @@ def fortify(force: bool) -> None:
 
     ok3, detail3 = _check_claude_dir()
     rows.append(("~/.claude directory", ok3, detail3))
+
+    personal = load_personal_config()
+    rows.append(("personal config", True, describe_personal_config(personal)))
 
     # Proceed with skill installs even if deps failed — users should see the
     # full state in one shot, not dep errors only.
