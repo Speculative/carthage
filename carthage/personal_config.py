@@ -17,6 +17,8 @@ if sys.version_info >= (3, 11):
 else:  # pragma: no cover - fallback for 3.10
     import tomli as tomllib
 
+from carthage.runtime import RuntimeEnv, RuntimeMount, RuntimeOverlay
+
 
 CURRENT_PERSONAL_CONFIG_SCHEMA = "1"
 MIN_READABLE_PERSONAL_CONFIG_SCHEMA = "1"
@@ -24,23 +26,8 @@ RESERVED_ENVIRONMENT_NAMES = frozenset({"CARTHAGE", "CARTHAGE_PROJECT"})
 _APT_PACKAGE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9+.-]*$")
 
 
-@dataclass(frozen=True)
-class PersonalMount:
-    id: str
-    source: str
-    target: str
-    mode: str
-
-    @property
-    def read_only(self) -> bool:
-        return self.mode == "ro"
-
-
-@dataclass(frozen=True)
-class PersonalEnvironment:
-    id: str
-    name: str
-    value: str
+PersonalMount = RuntimeMount
+PersonalEnvironment = RuntimeEnv
 
 
 @dataclass(frozen=True)
@@ -54,6 +41,10 @@ class PersonalConfig:
     mounts: tuple[PersonalMount, ...] = ()
     environment: tuple[PersonalEnvironment, ...] = ()
     image: PersonalImage = field(default_factory=PersonalImage)
+
+    @property
+    def runtime_overlay(self) -> RuntimeOverlay:
+        return RuntimeOverlay(mounts=self.mounts, environment=self.environment)
 
 
 @dataclass(frozen=True)

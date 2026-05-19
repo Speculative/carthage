@@ -9,7 +9,6 @@ run, and `--port HOST:CONTAINER` adds a one-off override.
 
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import subprocess
@@ -24,6 +23,7 @@ from carthage import __version__, annex_template_is_outdated, compose, image, po
 from carthage.config import CarthageConfig, ConfigError, load_config
 from carthage.personal_config import PersonalConfigResult, load_personal_config
 from carthage.personal_image import build_personal_image, personal_image_ref
+from carthage.runtime import filter_disabled_overlay, render_compose_overlay_service_parts
 
 console = Console()
 
@@ -307,30 +307,8 @@ def _personal_compose_override_parts(
         return []
 
     disabled = set(cfg.personal_disabled)
-    mounts = [mount for mount in personal.config.mounts if mount.id not in disabled]
-    env = [item for item in personal.config.environment if item.id not in disabled]
-    if not mounts and not env:
-        return []
-
-    parts: list[str] = []
-    if env:
-        parts.append("    environment:")
-        for item in env:
-            parts.append(f"      {item.name}: {_yaml_scalar(item.value)}")
-    if mounts:
-        parts.append("    volumes:")
-        for mount in mounts:
-            parts.extend([
-                "      - type: bind",
-                f"        source: {_yaml_scalar(mount.source)}",
-                f"        target: {_yaml_scalar(mount.target)}",
-                f"        read_only: {'true' if mount.read_only else 'false'}",
-            ])
-    return parts
-
-
-def _yaml_scalar(value: str) -> str:
-    return json.dumps(value)
+    overlay = filter_disabled_overlay(personal.config.runtime_overlay, disabled)
+    return render_compose_overlay_service_parts(overlay)
 
 
 def _extract_compose_files(compose_args: list[str]) -> list[str] | None:
