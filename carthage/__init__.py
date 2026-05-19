@@ -29,6 +29,7 @@ MIN_READABLE_CONFIG_SCHEMA = "1"
 EXPECTED_BASE_IMAGE_TAG = "v1"
 
 BASE_IMAGE_REPO = "ghcr.io/speculative/carthage-base"
+PERSONAL_BASE_IMAGE_REPO = "carthage-base-personal"
 
 
 def annex_template_is_outdated(annexed_with_cli: str | None) -> bool:

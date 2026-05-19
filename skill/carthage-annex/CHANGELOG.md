@@ -6,6 +6,20 @@ This changelog covers the *templates* this skill generates: `.carthage/Dockerfil
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions match the CLI/skill semver.
 
+## [1.3.0] — 2026-05-19
+
+### Changed
+- **Generated project Dockerfiles now inherit from `carthage-base-personal:v1`** instead of the published base directly. `carthage fortify` builds this local image from `ghcr.io/speculative/carthage-base:v1` plus the user's TOML-only personal image config.
+
+### Migration for existing projects
+After running `carthage fortify`, update `.carthage/Dockerfile`:
+
+```dockerfile
+FROM carthage-base-personal:v1
+```
+
+This lets project images pick up `[image].apt_packages` from `~/.carthage/config.toml`. Projects that intentionally bypass personal config can keep using `FROM ghcr.io/speculative/carthage-base:v1`.
+
 ## [1.1.0] — 2026-04-28
 
 ### Added

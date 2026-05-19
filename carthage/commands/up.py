@@ -21,6 +21,9 @@ from rich.console import Console
 
 from carthage import __version__, annex_template_is_outdated, compose, image, ports
 from carthage.config import CarthageConfig, ConfigError, load_config
+from carthage.personal_config import PersonalConfigResult, load_personal_config
+from carthage.personal_image import build_personal_image, personal_image_ref
+from carthage.runtime import filter_disabled_overlay, render_compose_overlay
 
 console = Console()
 
@@ -30,6 +33,11 @@ console = Console()
     "--force-rebuild",
     is_flag=True,
     help="Skip the staleness check and rebuild unconditionally.",
+)
+@click.option(
+    "--offline",
+    is_flag=True,
+    help="Skip the base-image pull; use whatever is cached locally.",
 )
 @click.option(
     "--no-host-ports",
@@ -46,7 +54,7 @@ console = Console()
         "Explicit only — we never silently remap."
     ),
 )
-def up(force_rebuild: bool, no_host_ports: bool, port_overrides: tuple[str, ...]) -> None:
+def up(force_rebuild: bool, offline: bool, no_host_ports: bool, port_overrides: tuple[str, ...]) -> None:
     """Start the project container (rebuild first if out of date)."""
     try:
         cfg = load_config()
@@ -71,17 +79,41 @@ def up(force_rebuild: bool, no_host_ports: bool, port_overrides: tuple[str, ...]
 
     # Validate port-override syntax early (fail before doing any work).
     overrides = _parse_overrides(port_overrides)
+    personal = load_personal_config()
+    for warning in personal.warnings:
+        console.print(f"[yellow]note:[/yellow] personal config: {warning}")
 
     # --- Refresh base image so digest drift is visible to the hash check ---
     # `compute_expected_hash` reads the base image's digest from the local
     # cache; without this pull, an upstream `:vN` rebuild looks like a no-op
     # to the staleness check and the user runs an old base indefinitely.
-    ok, detail = image.pull_base_image(cfg.base_image)
-    if not ok:
+    if offline:
         console.print(
-            f"[yellow]note:[/yellow] could not refresh {cfg.base_image} ({detail}); "
-            "using local cache. Run `carthage build --pull` once you're online."
+            f"[yellow]note:[/yellow] --offline: skipping pull of {cfg.base_image}; "
+            "using local cache."
         )
+    else:
+        ok, detail = image.pull_base_image(cfg.base_image)
+        if not ok:
+            console.print(
+                f"[yellow]note:[/yellow] could not refresh {cfg.base_image} ({detail}); "
+                "using local cache. Run `carthage build --pull` once you're online."
+            )
+
+    if _uses_personal_image(cfg):
+        personal_ref = personal_image_ref(cfg.base_image_tag)
+        console.print(f"[cyan]refreshing[/cyan] {personal_ref}…")
+        ok, detail = build_personal_image(
+            base_image=cfg.base_image,
+            target_image=personal_ref,
+            config=personal.config,
+        )
+        if not ok:
+            console.print(
+                f"[red]personal image build failed:[/red] {detail}. "
+                "Run `carthage fortify` after fixing personal config."
+            )
+            sys.exit(1)
 
     # --- Build (conditionally) ---
     expected_hash = image.compute_expected_hash(cfg)
@@ -112,12 +144,12 @@ def up(force_rebuild: bool, no_host_ports: bool, port_overrides: tuple[str, ...]
     # have been resolvable. (It doesn't strictly need it to exist yet, but
     # putting the check here keeps the "cheap checks first, expensive work
     # later" flow intact for most reruns.)
-    compose_args, cleanup = _build_compose_args(cfg, no_host_ports, overrides)
+    compose_args, cleanup = _build_compose_args(cfg, no_host_ports, overrides, personal)
     try:
         _check_port_collisions(
             cfg,
             compose_args,
-            invocation_flags=_reconstruct_flags(force_rebuild, no_host_ports, overrides),
+            invocation_flags=_reconstruct_flags(force_rebuild, offline, no_host_ports, overrides),
             user_overrides=overrides,
         )
     except subprocess.CalledProcessError:
@@ -160,6 +192,14 @@ def _parse_overrides(raw: tuple[str, ...]) -> list[tuple[int, int]]:
     return out
 
 
+def _uses_personal_image(cfg: CarthageConfig) -> bool:
+    try:
+        from_ref = image.parse_base_image(cfg.dockerfile.read_text())
+    except OSError:
+        return False
+    return from_ref == personal_image_ref(cfg.base_image_tag)
+
+
 def _resolve_runtime_env(cfg: CarthageConfig) -> dict[str, str]:
     """Compose env overrides we resolve per-invocation (not stored in the
     compose file itself): memory limit, cpu count, base-image version.
@@ -188,6 +228,7 @@ def _build_compose_args(
     cfg: CarthageConfig,
     no_host_ports: bool,
     overrides: list[tuple[int, int]],
+    personal: PersonalConfigResult | None = None,
 ) -> tuple[list[str], callable]:
     """Return (extra compose args, cleanup fn).
 
@@ -201,8 +242,56 @@ def _build_compose_args(
     rewriting the full ports list under `!override` because compose's default
     list-merge would otherwise produce duplicates.
     """
-    if not no_host_ports and not overrides:
+    runtime_content = _personal_compose_override_content(cfg, personal)
+    port_content = _port_compose_override_content(cfg, no_host_ports, overrides)
+    if runtime_content is None and port_content is None:
         return [], lambda: None
+
+    tmp_dir = tempfile.mkdtemp(prefix="carthage-compose-override-")
+    override_files: list[str] = []
+    if runtime_content is not None:
+        runtime_path = Path(tmp_dir) / "runtime.json"
+        runtime_path.write_text(runtime_content)
+        override_files.append(str(runtime_path))
+    if port_content is not None:
+        ports_path = Path(tmp_dir) / "ports.yaml"
+        ports_path.write_text(port_content)
+        override_files.append(str(ports_path))
+
+    extra_args = ["-f", str(cfg.compose_file)]
+    for override_file in override_files:
+        extra_args.extend(["-f", override_file])
+
+    def cleanup() -> None:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    # Note: extra_args intentionally *replaces* the default -f args that
+    # compose.py injects — we rebuild the full `-f` sequence here. This
+    # matters because compose.run() always inserts its own `-f` too. To
+    # avoid duplication, we return extra args that we'll prepend, and
+    # compose.run sees them and skips its own default. See compose.run.
+    return ["--extra-f-sequence"] + extra_args, cleanup
+
+
+def _personal_compose_override_content(
+    cfg: CarthageConfig,
+    personal: PersonalConfigResult | None,
+) -> str | None:
+    if personal is None:
+        return None
+
+    disabled = set(cfg.personal_disabled)
+    overlay = filter_disabled_overlay(personal.config.runtime_overlay, disabled)
+    return render_compose_overlay(cfg.service_name, overlay)
+
+
+def _port_compose_override_content(
+    cfg: CarthageConfig,
+    no_host_ports: bool,
+    overrides: list[tuple[int, int]],
+) -> str | None:
+    if not no_host_ports and not overrides:
+        return None
 
     parts: list[str] = ["services:", f"  {cfg.service_name}:"]
     if no_host_ports:
@@ -237,23 +326,7 @@ def _build_compose_args(
         parts.append("    ports: !override")
         for entry in merged:
             parts.append(f"      - \"{entry}\"")
-
-    override_content = "\n".join(parts) + "\n"
-    tmp_dir = tempfile.mkdtemp(prefix="carthage-compose-override-")
-    override_path = Path(tmp_dir) / "override.yaml"
-    override_path.write_text(override_content)
-
-    extra_args = ["-f", str(cfg.compose_file), "-f", str(override_path)]
-
-    def cleanup() -> None:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-
-    # Note: extra_args intentionally *replaces* the default -f args that
-    # compose.py injects — we rebuild the full `-f` sequence here. This
-    # matters because compose.run() always inserts its own `-f` too. To
-    # avoid duplication, we return extra args that we'll prepend, and
-    # compose.run sees them and skips its own default. See compose.run.
-    return ["--extra-f-sequence"] + extra_args, cleanup
+    return "\n".join(parts) + "\n"
 
 
 def _extract_compose_files(compose_args: list[str]) -> list[str] | None:
@@ -273,6 +346,7 @@ def _extract_compose_files(compose_args: list[str]) -> list[str] | None:
 
 def _reconstruct_flags(
     force_rebuild: bool,
+    offline: bool,
     no_host_ports: bool,
     overrides: list[tuple[int, int]],
 ) -> list[str]:
@@ -281,6 +355,8 @@ def _reconstruct_flags(
     flags: list[str] = []
     if force_rebuild:
         flags.append("--force-rebuild")
+    if offline:
+        flags.append("--offline")
     if no_host_ports:
         flags.append("--no-host-ports")
     for host, container in overrides:
@@ -375,5 +451,3 @@ def _reconstruct_flags_excluding(
         out.append(flags[i])
         i += 1
     return out
-
-

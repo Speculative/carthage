@@ -6,7 +6,7 @@ A personal sandboxed dev-environment system for running Claude Code on projects 
 
 Carthage wraps each project in an isolated Docker container that has the tools Claude Code needs, shares your Claude auth with the host, scopes filesystem access tightly, and persists sessions via tmux. One command takes you from "cloned repo" to "developing inside an isolated container with Claude Code running."
 
-It is three cooperating pieces: a published base image (`ghcr.io/speculative/carthage-base`) with the common tooling; a host-side Python CLI (`carthage up`, `carthage attach`, etc.); and personal Claude Code skills (`/carthage-annex`, and reserved for future `/carthage-migrate`) installed into `~/.claude/skills/` by `carthage fortify`.
+It is three cooperating pieces: a published base image (`ghcr.io/speculative/carthage-base`) with the common tooling plus a local personal layer (`carthage-base-personal`) built by `carthage fortify`; a host-side Python CLI (`carthage up`, `carthage attach`, etc.); and personal Claude Code skills (`/carthage-annex`, and reserved for future `/carthage-migrate`) installed into `~/.claude/skills/` by `carthage fortify`.
 
 The design goal is that `--dangerously-skip-permissions` is reasonable inside Carthage because the sandbox itself supplies meaningful boundaries: non-root user with a narrow capability set, no `sudo`, no Docker socket, `no-new-privileges`, tight mount scoping, ephemeral lifecycle. Prompt fatigue goes away; trust is anchored at what the container *can't* do.
 
@@ -20,7 +20,10 @@ carthage --version
 carthage fortify        # one-time: checks deps, installs ~/.claude/skills/carthage-annex
 ```
 
-`carthage fortify` is also how you pick up skill updates after a CLI upgrade — re-run it after `uv tool upgrade carthage-cli`. Skill updates are **not** automatic.
+`carthage fortify` is also how you pick up skill updates and rebuild your
+local personal base image after a CLI or `~/.carthage/config.toml` change —
+re-run it after `uv tool upgrade carthage-cli`. Skill updates are **not**
+automatic.
 
 ## Bringing a project in
 
@@ -35,7 +38,7 @@ carthage attach   # drops you into a tmux session with Claude Code running
 
 | Command | What it does |
 |---|---|
-| `carthage fortify` | One-time host setup. Checks deps, installs personal skills. Also run after upgrading the CLI. |
+| `carthage fortify` | One-time host setup. Checks deps, installs personal skills, builds `carthage-base-personal`. Also run after upgrading the CLI or changing personal image config. |
 | `carthage up` | Start the container. Rebuilds first if the image is stale. Refuses to start on host-port collisions with other Carthage projects. |
 | `carthage up --no-host-ports` | Start the container with all host bindings stripped (internal-only). |
 | `carthage up --port H:C` | Start with an extra one-off host binding. Explicit, repeatable. |
@@ -74,7 +77,7 @@ carthage attach   # drops you into a tmux session with Claude Code running
 Carthage ships three artifacts that share a single semver:
 
 1. The `carthage` CLI (versioned in `pyproject.toml`).
-2. The `carthage-base` Docker image, published as `:v1`, `:v1.2`, `:latest` on GHCR. Projects pin to a major (`v1`).
+2. The `carthage-base` Docker image, published as `:v1`, `:v1.2`, `:latest` on GHCR. `carthage fortify` layers local personal config on top as `carthage-base-personal:v1`; projects normally inherit from that local image.
 3. The personal Claude skills installed by `carthage fortify` (`carthage-annex` in v1; `carthage-migrate` reserved).
 
 Compatibility commitments:
@@ -101,10 +104,62 @@ There are several upgrade paths because the three artifacts (CLI, base image, in
 1. **CLI** — `uv tool upgrade carthage-cli`. Installs the new CLI binary on the host.
 2. **Skills** — `carthage fortify`. Re-installs `~/.claude/skills/carthage-annex` from the new wheel. Required after every CLI upgrade; not automatic.
 3. **Per-project templates** — in each annexed project, run `/carthage-annex --upgrade` from a Claude Code session. The skill reads its bundled `CHANGELOG.md`, surfaces every entry newer than the project's `annexed_with_cli`, then proposes file-by-file diffs against your committed `.carthage/`. This is how an existing project picks up template changes (new mounts, new env vars, new hardening defaults). Without this step, your committed compose file stays frozen at whatever template was current when you originally annexed.
-4. **Base image, within a major** — `carthage build --pull` from the project root. The `:v1` tag on GHCR moves forward as we publish minor/patch base-image releases (e.g., new tooling, default config files); `--pull` is what forces Docker to fetch the moved tag instead of using its cached digest. Without `--pull` you stay on whatever `:v1` resolved to last time.
-5. **Base image, across majors** — edit the `FROM` line in `.carthage/Dockerfile` (the source of truth — `base_image_tag` in `.carthage/config.toml` is informational and should be updated as a courtesy), then `carthage build`. Major bumps may require code or config changes; the `carthage-base` release notes will say. (`/carthage-migrate` will eventually orchestrate this; reserved in v1.)
+4. **Base image, within a major** — `carthage build --pull` from the project root. The `:v1` tag on GHCR moves forward as we publish minor/patch base-image releases (e.g., new tooling, default config files); `--pull` refreshes that published base, rebuilds the local personal base when the project uses it, then rebuilds the project image. Without `--pull` you stay on whatever base digest is cached locally.
+5. **Base image, across majors** — edit the `FROM` line in `.carthage/Dockerfile` (the source of truth — `base_image_tag` in `.carthage/config.toml` is informational and should be updated as a courtesy), then `carthage build`. Projects normally move from `carthage-base-personal:v1` to the next personal major after `carthage fortify` supports it. Major bumps may require code or config changes; the `carthage-base` release notes will say. (`/carthage-migrate` will eventually orchestrate this; reserved in v1.)
 
 `carthage survey` surfaces version-alignment drift across all of these axes (CLI, skills, project schema, Dockerfile `FROM`).
+
+## Personal config
+
+Carthage also looks for user-level config at `~/.carthage/config.toml`. This is
+reserved for preferences that apply across all of your Carthage projects.
+
+Minimal file:
+
+```toml
+[carthage]
+personal_config_version = "1"
+```
+
+Personal mounts and environment variables use stable IDs so individual projects
+can opt out:
+
+```toml
+[carthage]
+personal_config_version = "1"
+
+[[mounts]]
+id = "notes"
+source = "~/notes"
+target = "/home/carthage/.notes"
+mode = "ro"  # "ro" or "rw"
+
+[[environment]]
+id = "editor"
+name = "EDITOR"
+value = "vim"
+
+[image]
+apt_packages = ["fzf", "shellcheck"]
+```
+
+In a project-local `.carthage/config.toml`:
+
+```toml
+[personal]
+disable = ["notes"]
+```
+
+`carthage fortify` builds a local `carthage-base-personal:v1` image from the
+published Carthage base and installs `[image].apt_packages` into that personal
+layer. Newly annexed projects inherit from this local personal image. Re-run
+`carthage fortify` after changing `[image]`.
+
+Malformed or unsupported personal config is reported as a warning and ignored.
+Project-local `.carthage/config.toml` remains the source of truth for each
+project. Be careful with personal mounts: they apply to every Carthage project
+unless that project opts out, including projects whose code you do not fully
+trust.
 
 ## Troubleshooting
 

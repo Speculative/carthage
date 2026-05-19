@@ -29,6 +29,7 @@ from carthage.config import CarthageConfig
 # (heredocs, --chmod flags, etc.); if you need something we don't handle, you
 # can force a rebuild with `carthage build --no-cache`.
 _COPY_RE = re.compile(r"^\s*(?:COPY|ADD)\s+(.+)$", re.IGNORECASE)
+_FROM_RE = re.compile(r"^\s*FROM\s+(\S+)", re.IGNORECASE | re.MULTILINE)
 # Flags like --from=..., --chown=..., --chmod=..., --link
 _FLAG_RE = re.compile(r"^--[a-zA-Z][\w-]*(?:=\S*)?$")
 
@@ -89,6 +90,11 @@ def parse_copied_sources(dockerfile_text: str) -> list[str]:
     return sources
 
 
+def parse_base_image(dockerfile_text: str) -> str | None:
+    m = _FROM_RE.search(dockerfile_text)
+    return m.group(1) if m else None
+
+
 def _read_file_or_empty(path: Path) -> bytes:
     """Read a file if it exists. Return empty bytes if not — absent files still
     contribute to the hash via their path, which is enough to detect renames."""
@@ -125,7 +131,8 @@ def compute_expected_hash(cfg: CarthageConfig) -> str:
             continue
         copied[src] = _read_file_or_empty(src_path)
 
-    base_digest = get_base_image_digest(cfg.base_image)
+    base_ref = parse_base_image(dockerfile_text) or cfg.base_image
+    base_digest = get_base_image_digest(base_ref)
 
     return ImageHashInputs(
         dockerfile_bytes=dockerfile_bytes,

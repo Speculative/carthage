@@ -146,7 +146,7 @@ Templates live alongside this skill at `templates/`. Render them with the values
   - `service_name = "dev"`
   - `project_slug` — derive from project directory name, lowercase, replace non-alnum with `-`.
 
-- **`.carthage/Dockerfile`** — from `Dockerfile.j2`. `FROM ghcr.io/speculative/carthage-base:v1`. Add `RUN` layers for detected runtimes. For Python, prefer installing pyenv only if the project pins a non-system version (`.python-version` file or `requires-python = ">=3.X"` constraint); otherwise the base image's Python 3.12 is fine. For Node, install nvm only if `.nvmrc` pins a version different from the base image's LTS.
+- **`.carthage/Dockerfile`** — from `Dockerfile.j2`. `FROM carthage-base-personal:v1`; the user builds this local base with `carthage fortify`. Add `RUN` layers for detected runtimes. For Python, prefer installing pyenv only if the project pins a non-system version (`.python-version` file or `requires-python = ">=3.X"` constraint); otherwise the base image's Python 3.12 is fine. For Node, install nvm only if `.nvmrc` pins a version different from the base image's LTS.
 
 - **`.carthage/docker-compose.yaml`** — from `docker-compose.yaml.j2`. One service named `dev` with:
   - `build.context: ..` (project root)
@@ -198,6 +198,6 @@ End with:
 
 - **Don't commit anything.** The user runs `git commit` when they're ready.
 - **Don't start the container.** That's the user's next manual step.
-- **Don't install `carthage-base`** or prebuild. The first `carthage up` pulls and builds.
+- **Don't install `carthage-base`** or prebuild. The user runs `carthage fortify` for the personal base, and the first `carthage up` builds the project image.
 - **Don't install the `carthage` CLI.** Print instructions if it's missing.
 - **Don't add project-specific runtimes, sidecars, system packages, or ports that weren't in the spec the user confirmed in step 3c.** If you find new evidence mid-generation that something else is needed, loop back and re-confirm — don't silently expand the scope.

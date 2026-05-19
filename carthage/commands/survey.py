@@ -39,10 +39,13 @@ from carthage import (
     BASE_IMAGE_REPO,
     CURRENT_CONFIG_SCHEMA,
     EXPECTED_BASE_IMAGE_TAG,
+    PERSONAL_BASE_IMAGE_REPO,
     __version__,
     annex_template_is_outdated,
 )
+from carthage import image as carthage_image
 from carthage.config import ConfigError, load_config
+from carthage.personal_config import describe_personal_config, load_personal_config
 from carthage.skills import MANAGED_SKILLS, read_skill_version
 
 console = Console()
@@ -106,6 +109,12 @@ def check_uid_gid() -> tuple[bool, str]:
     if uid == 0:
         return False, "you are running as root (UID 0). Carthage expects a regular user."
     return True, f"uid={uid} gid={gid}"
+
+
+@_check("personal config")
+def check_personal_config() -> tuple[bool, str]:
+    result = load_personal_config()
+    return True, describe_personal_config(result)
 
 
 @_check("installed skills match CLI version")
@@ -215,14 +224,23 @@ def check_dockerfile_base(cfg) -> tuple[bool, str]:
         dockerfile = cfg.dockerfile.read_text()
     except FileNotFoundError:
         return False, f"{cfg.dockerfile} is missing"
-    m = re.search(r"^\s*FROM\s+(\S+)", dockerfile, re.MULTILINE)
-    if not m:
+    from_ref = carthage_image.parse_base_image(dockerfile)
+    if not from_ref:
         return False, "no FROM line found"
-    from_ref = m.group(1)
     # Accept either the exact configured ref or any tag on the same repo
     # whose major matches base_image_tag.
     if from_ref == cfg.base_image:
         return True, from_ref
+    personal_prefix = PERSONAL_BASE_IMAGE_REPO + ":"
+    if from_ref.startswith(personal_prefix):
+        tag = from_ref.split(":", 1)[1]
+        major = re.match(r"^v\d+", tag)
+        if major and major.group(0) == cfg.base_image_tag:
+            return True, f"{from_ref} (personal image major matches {cfg.base_image_tag})"
+        return False, (
+            f"Dockerfile FROM {from_ref!r} disagrees with config "
+            f"base_image_tag={cfg.base_image_tag!r}"
+        )
     if from_ref.startswith(BASE_IMAGE_REPO + ":"):
         tag = from_ref.split(":", 1)[1]
         major = re.match(r"^v\d+", tag)
@@ -284,6 +302,7 @@ def survey(deep: bool, base_image: str | None) -> None:
     if docker_up:
         results.append(check_compose_v2())
     results.append(check_claude_dir())
+    results.append(check_personal_config())
     results.append(check_uid_gid())
     results.append(check_skill_versions())
 

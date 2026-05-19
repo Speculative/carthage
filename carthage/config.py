@@ -9,6 +9,11 @@ Schema shape (v1):
     service_name     = "dev"
     project_slug     = "my-project"
 
+Optional personal-config opt-outs:
+
+    [personal]
+    disable = ["my-personal-mount"]
+
 `base_image` is *derived*, not stored — the tag + repo fully determines it.
 This avoids one class of drift (tag in config disagrees with `FROM` in
 Dockerfile). The CLI synthesizes `ghcr.io/speculative/carthage-base:<tag>`.
@@ -55,6 +60,7 @@ class CarthageConfig:
     project_slug: str
     schema_is_outdated: bool      # True if schema < CURRENT but within compat window
     base_image_override: str | None  # escape hatch for tests / forks; bypasses derivation
+    personal_disabled: tuple[str, ...]  # stable personal-config IDs disabled for this project
 
     @property
     def carthage_dir(self) -> Path:
@@ -173,6 +179,16 @@ def load_config(project_root: Path | None = None) -> CarthageConfig:
     override = table.get("base_image")
     base_image_override = str(override) if override else None
 
+    personal_table = data.get("personal", {})
+    if personal_table is None:
+        personal_table = {}
+    if not isinstance(personal_table, dict):
+        raise ConfigError(f"{config_path}: [personal] must be a table if present.")
+    disabled_raw = personal_table.get("disable", [])
+    if not isinstance(disabled_raw, list) or not all(isinstance(item, str) for item in disabled_raw):
+        raise ConfigError(f"{config_path}: [personal].disable must be a list of strings.")
+    personal_disabled = tuple(disabled_raw)
+
     return CarthageConfig(
         project_root=root,
         version=schema_version,
@@ -182,4 +198,5 @@ def load_config(project_root: Path | None = None) -> CarthageConfig:
         project_slug=slug,
         schema_is_outdated=schema_is_outdated,
         base_image_override=base_image_override,
+        personal_disabled=personal_disabled,
     )

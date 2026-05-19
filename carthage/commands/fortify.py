@@ -21,7 +21,10 @@ from pathlib import Path
 import click
 from rich.console import Console
 
-from carthage import __version__
+from carthage import BASE_IMAGE_REPO, EXPECTED_BASE_IMAGE_TAG, __version__
+from carthage import image as base_image
+from carthage.personal_config import describe_personal_config, load_personal_config
+from carthage.personal_image import build_personal_image, personal_image_ref
 from carthage.skills import MANAGED_SKILLS, SKILLS_DIR, read_skill_version
 
 console = Console()
@@ -154,6 +157,24 @@ def fortify(force: bool) -> None:
 
     ok3, detail3 = _check_claude_dir()
     rows.append(("~/.claude directory", ok3, detail3))
+
+    personal = load_personal_config()
+    rows.append(("personal config", True, describe_personal_config(personal)))
+
+    if ok:
+        source_image = f"{BASE_IMAGE_REPO}:{EXPECTED_BASE_IMAGE_TAG}"
+        target_image = personal_image_ref(EXPECTED_BASE_IMAGE_TAG)
+        pull_ok, pull_detail = base_image.pull_base_image(source_image)
+        if not pull_ok:
+            rows.append(("base image refresh", False, pull_detail))
+        else:
+            rows.append(("base image refresh", True, pull_detail))
+            build_ok, build_detail = build_personal_image(
+                base_image=source_image,
+                target_image=target_image,
+                config=personal.config,
+            )
+            rows.append(("personal image", build_ok, build_detail))
 
     # Proceed with skill installs even if deps failed — users should see the
     # full state in one shot, not dep errors only.
