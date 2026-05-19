@@ -109,9 +109,7 @@ There are several upgrade paths because the three artifacts (CLI, base image, in
 ## Personal config
 
 Carthage also looks for user-level config at `~/.carthage/config.toml`. This is
-reserved for preferences that apply across all of your Carthage projects. In
-the current release it is reported by `carthage fortify` and `carthage survey`
-but does not change container behavior yet.
+reserved for preferences that apply across all of your Carthage projects.
 
 Minimal file:
 
@@ -120,9 +118,37 @@ Minimal file:
 personal_config_version = "1"
 ```
 
+Personal mounts and environment variables use stable IDs so individual projects
+can opt out:
+
+```toml
+[carthage]
+personal_config_version = "1"
+
+[[mounts]]
+id = "notes"
+source = "~/notes"
+target = "/home/carthage/.notes"
+mode = "ro"  # "ro" or "rw"
+
+[[environment]]
+id = "editor"
+name = "EDITOR"
+value = "vim"
+```
+
+In a project-local `.carthage/config.toml`:
+
+```toml
+[personal]
+disable = ["notes"]
+```
+
 Malformed or unsupported personal config is reported as a warning and ignored.
 Project-local `.carthage/config.toml` remains the source of truth for each
-project.
+project. Be careful with personal mounts: they apply to every Carthage project
+unless that project opts out, including projects whose code you do not fully
+trust.
 
 ## Troubleshooting
 

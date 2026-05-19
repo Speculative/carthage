@@ -9,6 +9,7 @@ run, and `--port HOST:CONTAINER` adds a one-off override.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -21,6 +22,7 @@ from rich.console import Console
 
 from carthage import __version__, annex_template_is_outdated, compose, image, ports
 from carthage.config import CarthageConfig, ConfigError, load_config
+from carthage.personal_config import PersonalConfigResult, load_personal_config
 
 console = Console()
 
@@ -76,6 +78,9 @@ def up(force_rebuild: bool, offline: bool, no_host_ports: bool, port_overrides: 
 
     # Validate port-override syntax early (fail before doing any work).
     overrides = _parse_overrides(port_overrides)
+    personal = load_personal_config()
+    for warning in personal.warnings:
+        console.print(f"[yellow]note:[/yellow] personal config: {warning}")
 
     # --- Refresh base image so digest drift is visible to the hash check ---
     # `compute_expected_hash` reads the base image's digest from the local
@@ -123,7 +128,7 @@ def up(force_rebuild: bool, offline: bool, no_host_ports: bool, port_overrides: 
     # have been resolvable. (It doesn't strictly need it to exist yet, but
     # putting the check here keeps the "cheap checks first, expensive work
     # later" flow intact for most reruns.)
-    compose_args, cleanup = _build_compose_args(cfg, no_host_ports, overrides)
+    compose_args, cleanup = _build_compose_args(cfg, no_host_ports, overrides, personal)
     try:
         _check_port_collisions(
             cfg,
@@ -199,6 +204,7 @@ def _build_compose_args(
     cfg: CarthageConfig,
     no_host_ports: bool,
     overrides: list[tuple[int, int]],
+    personal: PersonalConfigResult | None = None,
 ) -> tuple[list[str], callable]:
     """Return (extra compose args, cleanup fn).
 
@@ -212,10 +218,12 @@ def _build_compose_args(
     rewriting the full ports list under `!override` because compose's default
     list-merge would otherwise produce duplicates.
     """
-    if not no_host_ports and not overrides:
+    runtime_parts = _personal_compose_override_parts(cfg, personal)
+    if not no_host_ports and not overrides and not runtime_parts:
         return [], lambda: None
 
     parts: list[str] = ["services:", f"  {cfg.service_name}:"]
+    parts.extend(runtime_parts)
     if no_host_ports:
         # User asked for no host ports at all; ignore --port too — explicit
         # mutual exclusion would surprise users who combined them. Reset wins.
@@ -265,6 +273,40 @@ def _build_compose_args(
     # avoid duplication, we return extra args that we'll prepend, and
     # compose.run sees them and skips its own default. See compose.run.
     return ["--extra-f-sequence"] + extra_args, cleanup
+
+
+def _personal_compose_override_parts(
+    cfg: CarthageConfig,
+    personal: PersonalConfigResult | None,
+) -> list[str]:
+    if personal is None:
+        return []
+
+    disabled = set(cfg.personal_disabled)
+    mounts = [mount for mount in personal.config.mounts if mount.id not in disabled]
+    env = [item for item in personal.config.environment if item.id not in disabled]
+    if not mounts and not env:
+        return []
+
+    parts: list[str] = []
+    if env:
+        parts.append("    environment:")
+        for item in env:
+            parts.append(f"      {item.name}: {_yaml_scalar(item.value)}")
+    if mounts:
+        parts.append("    volumes:")
+        for mount in mounts:
+            parts.extend([
+                "      - type: bind",
+                f"        source: {_yaml_scalar(mount.source)}",
+                f"        target: {_yaml_scalar(mount.target)}",
+                f"        read_only: {'true' if mount.read_only else 'false'}",
+            ])
+    return parts
+
+
+def _yaml_scalar(value: str) -> str:
+    return json.dumps(value)
 
 
 def _extract_compose_files(compose_args: list[str]) -> list[str] | None:
@@ -389,5 +431,3 @@ def _reconstruct_flags_excluding(
         out.append(flags[i])
         i += 1
     return out
-
-
