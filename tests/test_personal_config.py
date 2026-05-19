@@ -2,6 +2,7 @@ from carthage.personal_config import (
     CURRENT_PERSONAL_CONFIG_SCHEMA,
     PersonalConfig,
     PersonalEnvironment,
+    PersonalImage,
     PersonalMount,
     load_personal_config,
 )
@@ -35,6 +36,9 @@ mode = "ro"
 id = "editor"
 name = "EDITOR"
 value = "vim"
+
+[image]
+apt_packages = ["fzf", "shellcheck"]
 """
     )
 
@@ -51,6 +55,7 @@ value = "vim"
             ),
         ),
         environment=(PersonalEnvironment(id="editor", name="EDITOR", value="vim"),),
+        image=PersonalImage(apt_packages=("fzf", "shellcheck")),
     )
     assert result.exists is True
     assert result.warnings == ()
@@ -141,3 +146,23 @@ value = "x"
     assert "source must be absolute" in result.warnings[0]
     assert "mode must be 'ro' or 'rw'" in result.warnings[1]
     assert "not a valid environment variable" in result.warnings[2]
+
+
+def test_invalid_image_packages_are_skipped(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text(
+        """
+[carthage]
+personal_config_version = "1"
+
+[image]
+apt_packages = ["ok-package", "bad/package", "ok-package"]
+"""
+    )
+
+    result = load_personal_config(path)
+
+    assert result.config.image == PersonalImage(apt_packages=("ok-package",))
+    assert len(result.warnings) == 2
+    assert "not a valid apt package name" in result.warnings[0]
+    assert "duplicated" in result.warnings[1]

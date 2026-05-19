@@ -8,7 +8,8 @@ machine. Callers get defaults plus warnings they can surface to the user.
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, field
 from pathlib import Path
 
 if sys.version_info >= (3, 11):
@@ -20,6 +21,7 @@ else:  # pragma: no cover - fallback for 3.10
 CURRENT_PERSONAL_CONFIG_SCHEMA = "1"
 MIN_READABLE_PERSONAL_CONFIG_SCHEMA = "1"
 RESERVED_ENVIRONMENT_NAMES = frozenset({"CARTHAGE", "CARTHAGE_PROJECT"})
+_APT_PACKAGE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9+.-]*$")
 
 
 @dataclass(frozen=True)
@@ -42,10 +44,16 @@ class PersonalEnvironment:
 
 
 @dataclass(frozen=True)
+class PersonalImage:
+    apt_packages: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class PersonalConfig:
     version: str = CURRENT_PERSONAL_CONFIG_SCHEMA
     mounts: tuple[PersonalMount, ...] = ()
     environment: tuple[PersonalEnvironment, ...] = ()
+    image: PersonalImage = field(default_factory=PersonalImage)
 
 
 @dataclass(frozen=True)
@@ -127,11 +135,18 @@ def load_personal_config(path: Path | None = None) -> PersonalConfigResult:
 
     mounts, mount_warnings = _parse_mounts(data.get("mounts"), config_path)
     environment, env_warnings = _parse_environment(data.get("environment"), config_path)
+    image_config, image_warnings = _parse_image(data.get("image"), config_path)
     warnings.extend(mount_warnings)
     warnings.extend(env_warnings)
+    warnings.extend(image_warnings)
 
     return PersonalConfigResult(
-        PersonalConfig(version=version, mounts=mounts, environment=environment),
+        PersonalConfig(
+            version=version,
+            mounts=mounts,
+            environment=environment,
+            image=image_config,
+        ),
         tuple(warnings),
         config_path,
         True,
@@ -146,6 +161,8 @@ def describe_personal_config(result: PersonalConfigResult) -> str:
         counts.append(f"{len(result.config.mounts)} mount(s)")
     if result.config.environment:
         counts.append(f"{len(result.config.environment)} env var(s)")
+    if result.config.image.apt_packages:
+        counts.append(f"{len(result.config.image.apt_packages)} apt package(s)")
     suffix = f" ({', '.join(counts)})" if counts else ""
     base = f"{result.path} schema '{result.config.version}'{suffix}"
     if result.warnings:
@@ -260,3 +277,36 @@ def _string_field(table: dict, key: str) -> str | None:
     if not isinstance(value, str) or value == "":
         return None
     return value
+
+
+def _parse_image(raw: object, config_path: Path) -> tuple[PersonalImage, list[str]]:
+    if raw is None:
+        return PersonalImage(), []
+    if not isinstance(raw, dict):
+        return PersonalImage(), [f"{config_path}: [image] must be a table; skipping image config"]
+
+    warnings: list[str] = []
+    apt_raw = raw.get("apt_packages", [])
+    if not isinstance(apt_raw, list) or not all(isinstance(item, str) for item in apt_raw):
+        return PersonalImage(), [
+            f"{config_path}: [image].apt_packages must be a list of strings; skipping"
+        ]
+
+    packages: list[str] = []
+    seen: set[str] = set()
+    for package in apt_raw:
+        if not _APT_PACKAGE_RE.match(package):
+            warnings.append(
+                f"{config_path}: [image].apt_packages entry {package!r} is not "
+                "a valid apt package name; skipping"
+            )
+            continue
+        if package in seen:
+            warnings.append(
+                f"{config_path}: [image].apt_packages entry {package!r} is duplicated; skipping"
+            )
+            continue
+        seen.add(package)
+        packages.append(package)
+
+    return PersonalImage(apt_packages=tuple(packages)), warnings

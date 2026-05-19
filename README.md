@@ -20,7 +20,10 @@ carthage --version
 carthage fortify        # one-time: checks deps, installs ~/.claude/skills/carthage-annex
 ```
 
-`carthage fortify` is also how you pick up skill updates after a CLI upgrade — re-run it after `uv tool upgrade carthage-cli`. Skill updates are **not** automatic.
+`carthage fortify` is also how you pick up skill updates and rebuild your
+local personal base image after a CLI or `~/.carthage/config.toml` change —
+re-run it after `uv tool upgrade carthage-cli`. Skill updates are **not**
+automatic.
 
 ## Bringing a project in
 
@@ -35,7 +38,7 @@ carthage attach   # drops you into a tmux session with Claude Code running
 
 | Command | What it does |
 |---|---|
-| `carthage fortify` | One-time host setup. Checks deps, installs personal skills. Also run after upgrading the CLI. |
+| `carthage fortify` | One-time host setup. Checks deps, installs personal skills, builds `carthage-base-personal`. Also run after upgrading the CLI or changing personal image config. |
 | `carthage up` | Start the container. Rebuilds first if the image is stale. Refuses to start on host-port collisions with other Carthage projects. |
 | `carthage up --no-host-ports` | Start the container with all host bindings stripped (internal-only). |
 | `carthage up --port H:C` | Start with an extra one-off host binding. Explicit, repeatable. |
@@ -135,6 +138,9 @@ mode = "ro"  # "ro" or "rw"
 id = "editor"
 name = "EDITOR"
 value = "vim"
+
+[image]
+apt_packages = ["fzf", "shellcheck"]
 ```
 
 In a project-local `.carthage/config.toml`:
@@ -143,6 +149,11 @@ In a project-local `.carthage/config.toml`:
 [personal]
 disable = ["notes"]
 ```
+
+`carthage fortify` builds a local `carthage-base-personal:v1` image from the
+published Carthage base and installs `[image].apt_packages` into that personal
+layer. Newly annexed projects inherit from this local personal image. Re-run
+`carthage fortify` after changing `[image]`.
 
 Malformed or unsupported personal config is reported as a warning and ignored.
 Project-local `.carthage/config.toml` remains the source of truth for each

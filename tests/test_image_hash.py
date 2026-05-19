@@ -1,6 +1,6 @@
 """Unit tests for image.parse_copied_sources — the tricky bit of image.py."""
 
-from carthage.image import parse_copied_sources
+from carthage.image import parse_base_image, parse_copied_sources
 
 
 def test_basic_copy():
@@ -41,3 +41,15 @@ ENV X=1
 
 def test_case_insensitive():
     assert parse_copied_sources("copy app.py /dst/") == ["app.py"]
+
+
+def test_parse_base_image():
+    assert parse_base_image("FROM carthage-base-personal:v1\n") == "carthage-base-personal:v1"
+
+
+def test_parse_base_image_is_case_insensitive():
+    assert parse_base_image("from ubuntu:24.04\n") == "ubuntu:24.04"
+
+
+def test_parse_base_image_missing():
+    assert parse_base_image("RUN echo hi\n") is None

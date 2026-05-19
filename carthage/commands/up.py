@@ -23,6 +23,7 @@ from rich.console import Console
 from carthage import __version__, annex_template_is_outdated, compose, image, ports
 from carthage.config import CarthageConfig, ConfigError, load_config
 from carthage.personal_config import PersonalConfigResult, load_personal_config
+from carthage.personal_image import build_personal_image, personal_image_ref
 
 console = Console()
 
@@ -99,6 +100,21 @@ def up(force_rebuild: bool, offline: bool, no_host_ports: bool, port_overrides: 
                 "using local cache. Run `carthage build --pull` once you're online."
             )
 
+    if _uses_personal_image(cfg):
+        personal_ref = personal_image_ref(cfg.base_image_tag)
+        console.print(f"[cyan]refreshing[/cyan] {personal_ref}…")
+        ok, detail = build_personal_image(
+            base_image=cfg.base_image,
+            target_image=personal_ref,
+            config=personal.config,
+        )
+        if not ok:
+            console.print(
+                f"[red]personal image build failed:[/red] {detail}. "
+                "Run `carthage fortify` after fixing personal config."
+            )
+            sys.exit(1)
+
     # --- Build (conditionally) ---
     expected_hash = image.compute_expected_hash(cfg)
     have_image = image.local_image_exists(cfg.project_image_repo, expected_hash)
@@ -174,6 +190,14 @@ def _parse_overrides(raw: tuple[str, ...]) -> list[tuple[int, int]]:
             )
             sys.exit(2)
     return out
+
+
+def _uses_personal_image(cfg: CarthageConfig) -> bool:
+    try:
+        from_ref = image.parse_base_image(cfg.dockerfile.read_text())
+    except OSError:
+        return False
+    return from_ref == personal_image_ref(cfg.base_image_tag)
 
 
 def _resolve_runtime_env(cfg: CarthageConfig) -> dict[str, str]:
