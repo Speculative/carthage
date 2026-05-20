@@ -20,8 +20,9 @@ if [ ! -d "${HOME:-/home/carthage}/.claude" ]; then
 fi
 
 tmux_session="${CARTHAGE_TMUX_SESSION:-carthage-session}"
-agent_window="${CARTHAGE_AGENT_WINDOW:-${CARTHAGE_AGENT_KIND:-agent}}"
+agent_window="${CARTHAGE_AGENT_WINDOW:-claude}"
 agent_command="${CARTHAGE_AGENT_COMMAND:-claude --dangerously-skip-permissions}"
+tmux_agent_command="bash -lc '${agent_command}; exec bash -l'"
 
 # --- tmux session for the configured agent ---------------------------------
 # Agent auto-approval flags are appropriate here because the sandbox *is* the
@@ -31,12 +32,12 @@ if ! tmux has-session -t "${tmux_session}" 2>/dev/null; then
     # Without `exec`, the pane's process group leader is bash and tmux's
     # auto-rename reports the window as "bash" instead of the agent binary.
     tmux new-session -d -s "${tmux_session}" -n "${agent_window}" \
-        "exec ${agent_command}"
+        "${tmux_agent_command}"
     log "started tmux session '${tmux_session}' with window '${agent_window}'"
 elif ! tmux list-windows -t "${tmux_session}" -F '#{window_name}' \
         | grep -Fx -- "${agent_window}" >/dev/null; then
     tmux new-window -d -t "${tmux_session}:" -n "${agent_window}" \
-        "exec ${agent_command}"
+        "${tmux_agent_command}"
     log "added tmux window '${agent_window}' to session '${tmux_session}'"
 else
     log "tmux session '${tmux_session}' already has window '${agent_window}'"

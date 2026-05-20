@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import sys
 import re
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -17,12 +18,13 @@ if sys.version_info >= (3, 11):
 else:  # pragma: no cover - fallback for 3.10
     import tomli as tomllib
 
-from carthage.agents import DEFAULT_AGENT_KIND, supported_agent_kinds
+from carthage.agents import supported_agent_kinds
 from carthage.runtime import RuntimeEnv, RuntimeMount, RuntimeOverlay
 
 
 CURRENT_PERSONAL_CONFIG_SCHEMA = "1"
 MIN_READABLE_PERSONAL_CONFIG_SCHEMA = "1"
+PERSONAL_CONFIG_ENV = "CARTHAGE_PERSONAL_CONFIG"
 RESERVED_ENVIRONMENT_NAMES = frozenset({
     "CARTHAGE",
     "CARTHAGE_PROJECT",
@@ -46,8 +48,8 @@ class PersonalImage:
 
 @dataclass(frozen=True)
 class PersonalAgents:
-    installed: tuple[str, ...] = (DEFAULT_AGENT_KIND,)
-    default: str = DEFAULT_AGENT_KIND
+    installed: tuple[str, ...] = ()
+    default: str | None = None
 
 
 @dataclass(frozen=True)
@@ -72,6 +74,9 @@ class PersonalConfigResult:
 
 
 def default_personal_config_path() -> Path:
+    configured = os.environ.get(PERSONAL_CONFIG_ENV)
+    if configured:
+        return Path(configured).expanduser()
     return Path.home() / ".carthage" / "config.toml"
 
 
@@ -177,12 +182,10 @@ def describe_personal_config(result: PersonalConfigResult) -> str:
         counts.append(f"{len(result.config.environment)} env var(s)")
     if result.config.image.apt_packages:
         counts.append(f"{len(result.config.image.apt_packages)} apt package(s)")
-    if result.config.agents.default != DEFAULT_AGENT_KIND or result.config.agents.installed != (
-        DEFAULT_AGENT_KIND,
-    ):
+    if result.config.agents.default is not None or result.config.agents.installed:
         counts.append(
             "agents: "
-            f"{result.config.agents.default} default, "
+            f"{result.config.agents.default or 'none'} default, "
             f"{len(result.config.agents.installed)} installed"
         )
     suffix = f" ({', '.join(counts)})" if counts else ""
@@ -355,13 +358,13 @@ def _parse_agents(
 
     if raw_agents is not None:
         if not isinstance(raw_agents, dict):
-            return PersonalAgents(), [f"{config_path}: [agents] must be a table; using claude"]
-        installed_raw = raw_agents.get("installed", [DEFAULT_AGENT_KIND])
-        default_raw = raw_agents.get("default", DEFAULT_AGENT_KIND)
+            return PersonalAgents(), [f"{config_path}: [agents] must be a table; ignoring agents"]
+        installed_raw = raw_agents.get("installed", [])
+        default_raw = raw_agents.get("default")
     elif raw_agent is not None:
         if not isinstance(raw_agent, dict):
-            return PersonalAgents(), [f"{config_path}: [agent] must be a table; using claude"]
-        kind_raw = raw_agent.get("kind", DEFAULT_AGENT_KIND)
+            return PersonalAgents(), [f"{config_path}: [agent] must be a table; ignoring agent"]
+        kind_raw = raw_agent.get("kind")
         installed_raw = [kind_raw]
         default_raw = kind_raw
     else:
@@ -370,8 +373,8 @@ def _parse_agents(
     if not isinstance(installed_raw, list) or not all(
         isinstance(item, str) for item in installed_raw
     ):
-        warnings.append(f"{config_path}: [agents].installed must be a list of strings; using claude")
-        installed = [DEFAULT_AGENT_KIND]
+        warnings.append(f"{config_path}: [agents].installed must be a list of strings; ignoring it")
+        installed = []
     else:
         installed = []
         seen: set[str] = set()
@@ -385,17 +388,17 @@ def _parse_agents(
             seen.add(kind)
             installed.append(kind)
         if not installed:
-            warnings.append(f"{config_path}: no supported agents configured; using claude")
-            installed = [DEFAULT_AGENT_KIND]
+            warnings.append(f"{config_path}: no supported agents configured")
 
-    if not isinstance(default_raw, str) or default_raw == "":
-        warnings.append(f"{config_path}: [agents].default must be a string; using {installed[0]!r}")
-        default = installed[0]
+    if default_raw is None:
+        default = None
+        warnings.append(f"{config_path}: no default agent configured; run `carthage agent use`")
+    elif not isinstance(default_raw, str) or default_raw == "":
+        warnings.append(f"{config_path}: [agents].default must be a non-empty string")
+        default = None
     elif default_raw not in supported:
-        warnings.append(f"{config_path}: default agent {default_raw!r} is not supported; using claude")
-        default = DEFAULT_AGENT_KIND
-        if default not in installed:
-            installed.insert(0, default)
+        warnings.append(f"{config_path}: default agent {default_raw!r} is not supported")
+        default = None
     elif default_raw not in installed:
         warnings.append(
             f"{config_path}: default agent {default_raw!r} is not in installed agents; adding it"

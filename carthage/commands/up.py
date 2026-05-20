@@ -20,7 +20,7 @@ import click
 from rich.console import Console
 
 from carthage import __version__, annex_template_is_outdated, compose, image, ports
-from carthage.agents import get_agent_profile
+from carthage.agents import AgentConfigError, agent_profiles_for, require_agent_profile
 from carthage.config import CarthageConfig, ConfigError, load_config
 from carthage.personal_config import PersonalConfigResult, load_personal_config
 from carthage.personal_image import build_personal_image, personal_image_ref
@@ -83,6 +83,11 @@ def up(force_rebuild: bool, offline: bool, no_host_ports: bool, port_overrides: 
     personal = load_personal_config()
     for warning in personal.warnings:
         console.print(f"[yellow]note:[/yellow] personal config: {warning}")
+    try:
+        require_agent_profile(personal.config.agents.default)
+    except AgentConfigError as exc:
+        console.print(f"[red]error:[/red] {exc}")
+        sys.exit(2)
 
     # --- Refresh base image so digest drift is visible to the hash check ---
     # `compute_expected_hash` reads the base image's digest from the local
@@ -282,11 +287,19 @@ def _personal_compose_override_content(
         return None
 
     disabled = set(cfg.personal_disabled)
-    agent = get_agent_profile(personal.config.agents.default)
-    agent_overlay = agent.runtime_overlay if agent is not None else None
+    agent_mount_overlays = tuple(
+        profile.runtime_overlay()
+        for profile in agent_profiles_for(personal.config.agents.installed)
+        if profile.kind != "claude"
+    )
+    agent_launch_overlay = require_agent_profile(
+        personal.config.agents.default
+    ).runtime_overlay(include_mounts=False, launch=True)
     personal_overlay = filter_disabled_overlay(personal.config.runtime_overlay, disabled)
     overlay = merge_overlays(
-        *(item for item in (personal_overlay, agent_overlay) if item is not None)
+        personal_overlay,
+        *agent_mount_overlays,
+        *(item for item in (agent_launch_overlay,) if item is not None),
     )
     return render_compose_overlay(cfg.service_name, overlay)
 

@@ -35,6 +35,14 @@ def _env(home: Path, personal_repo: str) -> dict[str, str]:
     }
 
 
+def _agent_config_block() -> str:
+    return """
+[agents]
+installed = ["claude"]
+default = "claude"
+"""
+
+
 def _use_personal_image(project_dir: Path, personal_repo: str) -> str:
     image_ref = f"{personal_repo}:v1"
     dockerfile = project_dir / ".carthage" / "Dockerfile"
@@ -96,11 +104,20 @@ def personal_e2e(tmp_path: Path):
 
 
 @pytest.mark.project_fixture("py-http-server")
-def test_up_builds_isolated_personal_image_without_personal_config(
+def test_up_builds_isolated_personal_image_with_agent_only_personal_config(
     base_image, project_dir, compose_project_name, docker_cleanup, personal_e2e
 ):
     home, repo = personal_e2e
     image_ref = _use_personal_image(project_dir, repo)
+    carthage_home = home / ".carthage"
+    carthage_home.mkdir()
+    (carthage_home / "config.toml").write_text(
+        """
+[carthage]
+personal_config_version = "1"
+"""
+        + _agent_config_block()
+    )
 
     r = run_carthage("up", cwd=project_dir, env=_env(home, repo))
     assert r.returncode == 0, f"carthage up failed:\nstdout={r.stdout}\nstderr={r.stderr}"
@@ -136,11 +153,12 @@ source = "~/notes"
 target = "/home/carthage/.notes"
 mode = "ro"
 
-[[environment]]
+    [[environment]]
 id = "editor"
 name = "CARTHAGE_E2E_PERSONAL_ENV"
 value = "from-personal-config"
 """
+        + _agent_config_block()
     )
 
     r = run_carthage("up", cwd=project_dir, env=_env(home, repo))
@@ -182,6 +200,7 @@ id = "editor"
 name = "CARTHAGE_E2E_PERSONAL_ENV"
 value = "from-personal-config"
 """
+        + _agent_config_block()
     )
     project_config = project_dir / ".carthage" / "config.toml"
     project_config.write_text(project_config.read_text() + '\n[personal]\ndisable = ["notes", "editor"]\n')
@@ -212,6 +231,7 @@ personal_config_version = "1"
 [image]
 apt_packages = ["shellcheck"]
 """
+        + _agent_config_block()
     )
 
     r = run_carthage("up", cwd=project_dir, env=_env(home, repo))

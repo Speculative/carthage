@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 
 from carthage import EXPECTED_BASE_IMAGE_TAG, PERSONAL_BASE_IMAGE_REPO
+from carthage.agents import agent_profiles_for
 from carthage.personal_config import PersonalConfig
 
 
@@ -34,6 +35,17 @@ def render_personal_image_dockerfile(base_image: str, config: PersonalConfig) ->
         for package in config.image.apt_packages:
             lines.append(f"      {package} \\")
         lines.append(" && rm -rf /var/lib/apt/lists/*")
+
+    for profile in agent_profiles_for(config.agents.installed):
+        if not profile.install_commands:
+            continue
+        lines.extend([
+            "",
+            f"# Agent: {profile.kind}",
+        ])
+        for command in profile.install_commands:
+            lines.append(f"RUN {command}")
+
     lines.extend([
         "",
         "USER carthage",

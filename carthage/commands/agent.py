@@ -37,7 +37,7 @@ def list_agents() -> None:
         table.add_row(
             kind,
             "yes" if kind in configured.installed else "no",
-            "yes" if kind == configured.default else "",
+            "yes" if configured.default == kind else "",
             profile.launch_command if profile is not None else "",
         )
     console.print(table)

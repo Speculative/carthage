@@ -10,7 +10,7 @@ import click
 from rich.console import Console
 
 from carthage import compose
-from carthage.agents import DEFAULT_TMUX_SESSION, default_agent_profile, get_agent_profile
+from carthage.agents import DEFAULT_TMUX_SESSION, AgentConfigError, require_agent_profile
 from carthage.config import ConfigError, load_config
 from carthage.personal_config import load_personal_config
 
@@ -32,7 +32,11 @@ def attach(session: str | None) -> None:
         sys.exit(2)
 
     personal = load_personal_config()
-    profile = get_agent_profile(personal.config.agents.default) or default_agent_profile()
+    try:
+        profile = require_agent_profile(personal.config.agents.default)
+    except AgentConfigError as exc:
+        console.print(f"[red]error:[/red] {exc}")
+        sys.exit(2)
     if session is None:
         session = DEFAULT_TMUX_SESSION
 
@@ -59,10 +63,11 @@ def _ensure_agent_window(cfg, *, session: str, window: str, command: str) -> Non
 session={shlex.quote(session)}
 window={shlex.quote(window)}
 command={shlex.quote(command)}
+tmux_command="bash -lc '$command; exec bash -l'"
 if ! tmux has-session -t "$session" 2>/dev/null; then
-    tmux new-session -d -s "$session" -n "$window" "exec $command"
+    tmux new-session -d -s "$session" -n "$window" "$tmux_command"
 elif ! tmux list-windows -t "$session" -F '#{{window_name}}' | grep -Fx -- "$window" >/dev/null; then
-    tmux new-window -d -t "$session:" -n "$window" "exec $command"
+    tmux new-window -d -t "$session:" -n "$window" "$tmux_command"
 fi
 """
     compose.run(

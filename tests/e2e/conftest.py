@@ -161,6 +161,10 @@ def run_carthage(*args: str, cwd: Path, env: dict[str, str] | None = None) -> su
     full_env = os.environ.copy()
     if env:
         full_env.update(env)
+    else:
+        full_env["CARTHAGE_PERSONAL_CONFIG"] = str(
+            REPO_ROOT / "tests" / "e2e" / "fixtures" / "personal-config.claude.toml"
+        )
     # Make sure PYTHONPATH lets us import the CLI package from source.
     existing = full_env.get("PYTHONPATH", "")
     full_env["PYTHONPATH"] = f"{REPO_ROOT}{os.pathsep}{existing}" if existing else str(REPO_ROOT)

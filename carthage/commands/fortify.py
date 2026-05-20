@@ -23,6 +23,7 @@ from rich.console import Console
 
 from carthage import BASE_IMAGE_REPO, EXPECTED_BASE_IMAGE_TAG, __version__
 from carthage import image as base_image
+from carthage.agents import AgentProfile, AgentConfigError, agent_profiles_for, require_agent_profile
 from carthage.personal_config import describe_personal_config, load_personal_config
 from carthage.personal_image import build_personal_image, personal_image_ref
 from carthage.skills import MANAGED_SKILLS, SKILLS_DIR, read_skill_version
@@ -63,6 +64,21 @@ def _check_claude_dir() -> tuple[bool, str]:
             "to Claude Code before using Carthage."
         )
     return True, str(p)
+
+
+def _check_codex_dir() -> tuple[bool, str]:
+    p = Path.home() / ".codex"
+    if not p.is_dir():
+        return False, f"{p} does not exist. Run `codex --login` on the host first."
+    return True, str(p)
+
+
+def _check_agent_auth(profile: AgentProfile) -> tuple[bool, str]:
+    if profile.kind == "claude":
+        return _check_claude_dir()
+    if profile.kind == "codex":
+        return _check_codex_dir()
+    return True, "no host auth check defined"
 
 
 # --- Skill installation ---------------------------------------------------
@@ -155,13 +171,21 @@ def fortify(force: bool) -> None:
         ok2, detail2 = _check_compose_v2()
         rows.append(("docker compose v2", ok2, detail2))
 
-    ok3, detail3 = _check_claude_dir()
-    rows.append(("~/.claude directory", ok3, detail3))
-
     personal = load_personal_config()
     rows.append(("personal config", True, describe_personal_config(personal)))
+    try:
+        require_agent_profile(personal.config.agents.default)
+        agent_config_ok = True
+    except AgentConfigError as exc:
+        rows.append(("default agent", False, str(exc)))
+        agent_config_ok = False
 
-    if ok:
+    if agent_config_ok:
+        for profile in agent_profiles_for(personal.config.agents.installed):
+            aok, adetail = _check_agent_auth(profile)
+            rows.append((f"{profile.kind} auth", aok, adetail))
+
+    if ok and agent_config_ok:
         source_image = f"{BASE_IMAGE_REPO}:{EXPECTED_BASE_IMAGE_TAG}"
         target_image = personal_image_ref(EXPECTED_BASE_IMAGE_TAG)
         pull_ok, pull_detail = base_image.pull_base_image(source_image)
@@ -178,9 +202,10 @@ def fortify(force: bool) -> None:
 
     # Proceed with skill installs even if deps failed — users should see the
     # full state in one shot, not dep errors only.
-    for name in MANAGED_SKILLS:
-        sok, sdetail = _install_skill(name, force=force)
-        rows.append((f"skill: {name}", sok, sdetail))
+    if "claude" in personal.config.agents.installed:
+        for name in MANAGED_SKILLS:
+            sok, sdetail = _install_skill(name, force=force)
+            rows.append((f"skill: {name}", sok, sdetail))
 
     any_failed = False
     for label, row_ok, detail in rows:

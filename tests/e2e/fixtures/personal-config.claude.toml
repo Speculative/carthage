@@ -1,0 +1,7 @@
+[carthage]
+personal_config_version = "1"
+
+[agents]
+installed = ["claude"]
+default = "claude"
+

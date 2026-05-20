@@ -9,6 +9,7 @@ import click
 from rich.console import Console
 
 from carthage import compose, image
+from carthage.agents import AgentConfigError, require_agent_profile
 from carthage.config import ConfigError, load_config
 from carthage.personal_config import load_personal_config
 from carthage.personal_image import build_personal_image, personal_image_ref
@@ -40,6 +41,11 @@ def build(no_cache: bool, pull: bool) -> None:
         personal = load_personal_config()
         for warning in personal.warnings:
             console.print(f"[yellow]note:[/yellow] personal config: {warning}")
+        try:
+            require_agent_profile(personal.config.agents.default)
+        except AgentConfigError as exc:
+            console.print(f"[red]error:[/red] {exc}")
+            sys.exit(2)
         console.print(f"[cyan]rebuilding[/cyan] {from_ref}…")
         ok, detail = build_personal_image(
             base_image=cfg.base_image,

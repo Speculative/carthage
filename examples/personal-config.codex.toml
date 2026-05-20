@@ -1,0 +1,6 @@
+[carthage]
+personal_config_version = "1"
+
+[agents]
+installed = ["codex"]
+default = "codex"

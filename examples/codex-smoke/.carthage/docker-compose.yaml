@@ -1,0 +1,52 @@
+name: carthage-example-codex-smoke
+
+x-carthage-labels: &carthage_labels
+  carthage.managed: "true"
+  carthage.project: "example-codex-smoke"
+
+services:
+  dev:
+    build:
+      context: ..
+      dockerfile: .carthage/Dockerfile
+      args:
+        HOST_UID: ${HOST_UID:-1000}
+        HOST_GID: ${HOST_GID:-1000}
+    image: carthage-example-codex-smoke:latest
+    working_dir: /workspace
+    init: true
+    tty: true
+    stdin_open: true
+
+    labels:
+      <<: *carthage_labels
+      carthage.role: "dev"
+      carthage.base-image-version: "${CARTHAGE_BASE_IMAGE_VERSION:-}"
+
+    cap_drop: [ALL]
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 1000
+    mem_limit: ${CARTHAGE_MEM_LIMIT:-0}
+    cpus: ${CARTHAGE_CPUS:-0}
+
+    environment:
+      CARTHAGE: "1"
+      CARTHAGE_PROJECT: "example-codex-smoke"
+
+    volumes:
+      - ..:/workspace:rw
+      - ${HOME}/.gitconfig:/home/carthage/.gitconfig:ro
+      - ${HOME}/.carthage/state/example-codex-smoke:/commandhistory:rw
+
+    networks:
+      - carthage-net
+
+networks:
+  carthage-net:
+    driver: bridge

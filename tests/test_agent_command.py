@@ -55,7 +55,25 @@ def test_agent_use_rejects_unknown_agent(tmp_path):
     home = tmp_path / "home"
     home.mkdir()
 
-    result = runner.invoke(agent, ["use", "codex"], env={"HOME": str(home)})
+    result = runner.invoke(agent, ["use", "gemini"], env={"HOME": str(home)})
 
     assert result.exit_code == 2
-    assert "unsupported agent 'codex'" in result.output
+    assert "unsupported agent 'gemini'" in result.output
+
+
+def test_agent_use_accepts_codex(tmp_path):
+    runner = CliRunner()
+    home = tmp_path / "home"
+    home.mkdir()
+
+    result = runner.invoke(agent, ["use", "codex"], env={"HOME": str(home)})
+
+    assert result.exit_code == 0
+    assert (home / ".carthage" / "config.toml").read_text() == (
+        "[carthage]\n"
+        "personal_config_version = \"1\"\n"
+        "\n"
+        "[agents]\n"
+        "installed = [\"codex\"]\n"
+        "default = \"codex\"\n"
+    )

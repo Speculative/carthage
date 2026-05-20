@@ -1,4 +1,4 @@
-from carthage.personal_config import PersonalConfig, PersonalImage
+from carthage.personal_config import PersonalAgents, PersonalConfig, PersonalImage
 from carthage.personal_image import personal_image_ref, render_personal_image_dockerfile
 
 
@@ -35,3 +35,14 @@ def test_render_personal_image_with_apt_packages():
     assert "      shellcheck \\\n && rm -rf /var/lib/apt/lists/*" in dockerfile
     assert "rm -rf /var/lib/apt/lists/*" in dockerfile
     assert "USER carthage" in dockerfile
+
+
+def test_render_personal_image_installs_codex_agent():
+    dockerfile = render_personal_image_dockerfile(
+        "ghcr.io/speculative/carthage-base:v1",
+        PersonalConfig(agents=PersonalAgents(installed=("claude", "codex"), default="codex")),
+    )
+
+    assert "# Agent: codex" in dockerfile
+    assert "RUN npm install -g @openai/codex" in dockerfile
+    assert "RUN codex --version" in dockerfile

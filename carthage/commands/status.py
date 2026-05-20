@@ -20,7 +20,7 @@ from rich.console import Console
 from rich.table import Table
 
 from carthage import __version__, annex_template_is_outdated, compose, image
-from carthage.agents import DEFAULT_TMUX_SESSION, default_agent_profile, get_agent_profile
+from carthage.agents import DEFAULT_TMUX_SESSION, AgentConfigError, require_agent_profile
 from carthage.config import ConfigError, load_config
 from carthage.personal_config import load_personal_config
 
@@ -138,7 +138,11 @@ def _status_current() -> None:
 
     # tmux session (reflects whether entrypoint successfully spun it up)
     personal = load_personal_config()
-    profile = get_agent_profile(personal.config.agents.default) or default_agent_profile()
+    try:
+        profile = require_agent_profile(personal.config.agents.default)
+    except AgentConfigError as exc:
+        table.add_row("agent", f"[yellow]{exc}[/yellow]")
+        profile = None
     probe = compose.run(
         cfg,
         ["exec", "-T", cfg.service_name, "tmux", "has-session", "-t", DEFAULT_TMUX_SESSION],
@@ -156,8 +160,13 @@ def _status_current() -> None:
             check=False,
         )
         windows = set(window_probe.stdout.splitlines()) if window_probe.returncode == 0 else set()
-        if profile.tmux_window in windows:
-            table.add_row(f"tmux '{DEFAULT_TMUX_SESSION}'", f"[green]alive[/green] ({profile.tmux_window})")
+        if profile is None:
+            table.add_row(f"tmux '{DEFAULT_TMUX_SESSION}'", "[green]alive[/green]")
+        elif profile.tmux_window in windows:
+            table.add_row(
+                f"tmux '{DEFAULT_TMUX_SESSION}'",
+                f"[green]alive[/green] ({profile.tmux_window})",
+            )
         else:
             table.add_row(
                 f"tmux '{DEFAULT_TMUX_SESSION}'",

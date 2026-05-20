@@ -50,6 +50,10 @@ value = "vim"
 id = "reserved"
 name = "CARTHAGE"
 value = "nope"
+
+[agents]
+installed = ["claude"]
+default = "claude"
 """
     )
 
@@ -156,3 +160,41 @@ def test_personal_and_port_overrides_are_separate_files(tmp_path):
         assert "ports: !reset []" in Path(override_files[1]).read_text()
     finally:
         cleanup()
+
+
+def test_installed_codex_agent_adds_auth_mount_and_launch_env(tmp_path):
+    _write_project(tmp_path)
+    personal_path = tmp_path / "personal.toml"
+    personal_path.write_text(
+        """
+[carthage]
+personal_config_version = "1"
+
+[agents]
+installed = ["claude", "codex"]
+default = "codex"
+"""
+    )
+    cfg = load_config(tmp_path)
+    personal = load_personal_config(personal_path)
+
+    args, cleanup = _build_compose_args(cfg, False, [], personal)
+    try:
+        content = json.loads(Path(args[-1]).read_text())
+    finally:
+        cleanup()
+
+    service = content["services"]["dev"]
+    assert service["environment"] == {
+        "CARTHAGE_AGENT_BINARY": "codex",
+        "CARTHAGE_AGENT_COMMAND": "codex --full-auto",
+        "CARTHAGE_AGENT_KIND": "codex",
+        "CARTHAGE_AGENT_WINDOW": "codex",
+        "CARTHAGE_TMUX_SESSION": "carthage-session",
+    }
+    assert {
+        "type": "bind",
+        "source": "${HOME}/.codex",
+        "target": "/home/carthage/.codex",
+        "read_only": False,
+    } in service["volumes"]

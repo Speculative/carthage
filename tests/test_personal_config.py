@@ -20,6 +20,26 @@ def test_missing_personal_config_returns_defaults(tmp_path):
     assert result.path == path
 
 
+def test_personal_config_path_can_come_from_env(tmp_path, monkeypatch):
+    path = tmp_path / "custom-personal.toml"
+    path.write_text(
+        """
+[carthage]
+personal_config_version = "1"
+
+[agents]
+installed = ["codex"]
+default = "codex"
+"""
+    )
+    monkeypatch.setenv("CARTHAGE_PERSONAL_CONFIG", str(path))
+
+    result = load_personal_config()
+
+    assert result.path == path
+    assert result.config.agents == PersonalAgents(installed=("codex",), default="codex")
+
+
 def test_valid_personal_config(tmp_path):
     path = tmp_path / "config.toml"
     path.write_text(
@@ -200,15 +220,56 @@ def test_unknown_agents_are_skipped(tmp_path):
 personal_config_version = "1"
 
 [agents]
-installed = ["codex", "claude", "claude"]
+installed = ["gemini", "claude", "claude"]
+default = "gemini"
+"""
+    )
+
+    result = load_personal_config(path)
+
+    assert result.config.agents == PersonalAgents(installed=("claude",), default=None)
+    assert len(result.warnings) == 3
+    assert "agent 'gemini' is not supported" in result.warnings[0]
+    assert "agent 'claude' is duplicated" in result.warnings[1]
+    assert "default agent 'gemini' is not supported" in result.warnings[2]
+
+
+def test_agents_without_default_do_not_pick_one_implicitly(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text(
+        """
+[carthage]
+personal_config_version = "1"
+
+[agents]
+installed = ["codex"]
+"""
+    )
+
+    result = load_personal_config(path)
+
+    assert result.config.agents == PersonalAgents(installed=("codex",), default=None)
+    assert len(result.warnings) == 1
+    assert "no default agent configured" in result.warnings[0]
+
+
+def test_codex_agent_config_is_accepted(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text(
+        """
+[carthage]
+personal_config_version = "1"
+
+[agents]
+installed = ["claude", "codex"]
 default = "codex"
 """
     )
 
     result = load_personal_config(path)
 
-    assert result.config.agents == PersonalAgents(installed=("claude",), default="claude")
-    assert len(result.warnings) == 3
-    assert "agent 'codex' is not supported" in result.warnings[0]
-    assert "agent 'claude' is duplicated" in result.warnings[1]
-    assert "default agent 'codex' is not supported" in result.warnings[2]
+    assert result.config.agents == PersonalAgents(
+        installed=("claude", "codex"),
+        default="codex",
+    )
+    assert result.warnings == ()
