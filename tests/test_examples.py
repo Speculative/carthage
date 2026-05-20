@@ -15,4 +15,5 @@ def test_codex_smoke_example_is_a_valid_project():
     assert cfg.service_name == "dev"
     assert cfg.dockerfile.read_text().startswith("FROM carthage-base-personal:v1\n")
     assert (root / "AGENTS.md").is_file()
-
+    assert (root / "scripts" / "run.sh").is_file()
+    assert (root / "scripts" / "down.sh").is_file()

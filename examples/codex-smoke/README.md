@@ -7,6 +7,18 @@ personal image before `carthage up`.
 From this directory:
 
 ```bash
+./scripts/run.sh
+```
+
+To stop the container afterward:
+
+```bash
+./scripts/down.sh
+```
+
+Equivalent manual commands:
+
+```bash
 export CARTHAGE_PERSONAL_CONFIG=/home/jtao/code/carthage/examples/personal-config.codex.toml
 
 uv --project /home/jtao/code/carthage run carthage fortify
@@ -27,4 +39,3 @@ ls ~/.codex/auth.json
 If Codex is not logged in on the host yet, run `codex --login` on the host
 first. Keep `HOME` unchanged when running this example so `${HOME}/.codex`
 mounts your real Codex auth directory into the container.
-

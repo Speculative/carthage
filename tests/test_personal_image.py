@@ -44,5 +44,8 @@ def test_render_personal_image_installs_codex_agent():
     )
 
     assert "# Agent: codex" in dockerfile
+    assert "# Agent: codex\nUSER carthage\nRUN npm config set prefix" in dockerfile
+    assert "RUN npm config set prefix /home/carthage/.local" in dockerfile
     assert "RUN npm install -g @openai/codex" in dockerfile
     assert "RUN codex --version" in dockerfile
+    assert "RUN codex --version\nUSER root" in dockerfile

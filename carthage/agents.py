@@ -21,6 +21,7 @@ class AgentProfile:
     install_commands: tuple[str, ...]
     launch_command: str
     tmux_window: str
+    install_user: str = "root"
     auth_mounts: tuple[RuntimeMount, ...] = ()
     managed_skill_dir: str | None = None
 
@@ -67,10 +68,12 @@ CODEX_PROFILE = AgentProfile(
     kind="codex",
     binary="codex",
     install_commands=(
+        "npm config set prefix /home/carthage/.local",
         "npm install -g @openai/codex",
         "codex --version",
     ),
-    launch_command="codex --full-auto",
+    install_user="carthage",
+    launch_command="codex --dangerously-bypass-approvals-and-sandbox",
     tmux_window="codex",
     auth_mounts=(
         RuntimeMount("agent-codex-dir", "${HOME}/.codex", "/home/carthage/.codex", "rw"),

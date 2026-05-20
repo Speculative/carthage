@@ -43,8 +43,12 @@ def render_personal_image_dockerfile(base_image: str, config: PersonalConfig) ->
             "",
             f"# Agent: {profile.kind}",
         ])
+        if profile.install_user != "root":
+            lines.append(f"USER {profile.install_user}")
         for command in profile.install_commands:
             lines.append(f"RUN {command}")
+        if profile.install_user != "root":
+            lines.append("USER root")
 
     lines.extend([
         "",

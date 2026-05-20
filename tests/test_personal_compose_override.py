@@ -187,7 +187,7 @@ default = "codex"
     service = content["services"]["dev"]
     assert service["environment"] == {
         "CARTHAGE_AGENT_BINARY": "codex",
-        "CARTHAGE_AGENT_COMMAND": "codex --full-auto",
+        "CARTHAGE_AGENT_COMMAND": "codex --dangerously-bypass-approvals-and-sandbox",
         "CARTHAGE_AGENT_KIND": "codex",
         "CARTHAGE_AGENT_WINDOW": "codex",
         "CARTHAGE_TMUX_SESSION": "carthage-session",
