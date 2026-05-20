@@ -42,7 +42,7 @@ carthage attach   # drops you into a tmux session with Claude Code running
 | `carthage up` | Start the container. Rebuilds first if the image is stale. Refuses to start on host-port collisions with other Carthage projects. |
 | `carthage up --no-host-ports` | Start the container with all host bindings stripped (internal-only). |
 | `carthage up --port H:C` | Start with an extra one-off host binding. Explicit, repeatable. |
-| `carthage attach` | Attach to the running container's tmux `claude` session. Detach with `Ctrl-b d`. |
+| `carthage attach` | Attach to the running container's tmux session. Detach with `Ctrl-b d`. |
 | `carthage down` | Stop the container. Volumes and images are kept. |
 | `carthage destroy` | Stop and remove containers, volumes, and project-local images. Confirms first. |
 | `carthage build` | Force a rebuild. Pass `--no-cache` to skip the layer cache. |

@@ -20,7 +20,9 @@ from rich.console import Console
 from rich.table import Table
 
 from carthage import __version__, annex_template_is_outdated, compose, image
+from carthage.agents import DEFAULT_TMUX_SESSION, default_agent_profile, get_agent_profile
 from carthage.config import ConfigError, load_config
+from carthage.personal_config import load_personal_config
 
 console = Console()
 
@@ -135,15 +137,34 @@ def _status_current() -> None:
         table.add_row("services", "[red]compose ps failed[/red]")
 
     # tmux session (reflects whether entrypoint successfully spun it up)
+    personal = load_personal_config()
+    profile = get_agent_profile(personal.config.agents.default) or default_agent_profile()
     probe = compose.run(
         cfg,
-        ["exec", "-T", cfg.service_name, "tmux", "has-session", "-t", "claude"],
+        ["exec", "-T", cfg.service_name, "tmux", "has-session", "-t", DEFAULT_TMUX_SESSION],
         capture=True, check=False,
     )
     if probe.returncode == 0:
-        table.add_row("tmux 'claude'", "[green]alive[/green]")
+        window_probe = compose.run(
+            cfg,
+            [
+                "exec", "-T", cfg.service_name,
+                "tmux", "list-windows", "-t", DEFAULT_TMUX_SESSION,
+                "-F", "#{window_name}",
+            ],
+            capture=True,
+            check=False,
+        )
+        windows = set(window_probe.stdout.splitlines()) if window_probe.returncode == 0 else set()
+        if profile.tmux_window in windows:
+            table.add_row(f"tmux '{DEFAULT_TMUX_SESSION}'", f"[green]alive[/green] ({profile.tmux_window})")
+        else:
+            table.add_row(
+                f"tmux '{DEFAULT_TMUX_SESSION}'",
+                f"[yellow]alive[/yellow] ({profile.tmux_window} window missing)",
+            )
     else:
-        table.add_row("tmux 'claude'", "[dim]absent or container stopped[/dim]")
+        table.add_row(f"tmux '{DEFAULT_TMUX_SESSION}'", "[dim]absent or container stopped[/dim]")
 
     # Image freshness
     try:

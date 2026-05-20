@@ -72,7 +72,14 @@ def test_personal_compose_override_adds_mounts_and_environment(tmp_path):
 
     assert args[:2] == ["--extra-f-sequence", "-f"]
     service = content["services"]["dev"]
-    assert service["environment"] == {"EDITOR": "vim"}
+    assert service["environment"] == {
+        "CARTHAGE_AGENT_BINARY": "claude",
+        "CARTHAGE_AGENT_COMMAND": "claude --dangerously-skip-permissions",
+        "CARTHAGE_AGENT_KIND": "claude",
+        "CARTHAGE_AGENT_WINDOW": "claude",
+        "CARTHAGE_TMUX_SESSION": "carthage-session",
+        "EDITOR": "vim",
+    }
     assert service["volumes"] == [
         {
             "type": "bind",
@@ -109,7 +116,13 @@ disable = ["notes", "editor"]
         cleanup()
 
     service = content["services"]["dev"]
-    assert "environment" not in service
+    assert service["environment"] == {
+        "CARTHAGE_AGENT_BINARY": "claude",
+        "CARTHAGE_AGENT_COMMAND": "claude --dangerously-skip-permissions",
+        "CARTHAGE_AGENT_KIND": "claude",
+        "CARTHAGE_AGENT_WINDOW": "claude",
+        "CARTHAGE_TMUX_SESSION": "carthage-session",
+    }
     assert service["volumes"] == [
         {
             "type": "bind",
@@ -133,7 +146,12 @@ def test_personal_and_port_overrides_are_separate_files(tmp_path):
         override_files = args[4::2]
         assert [Path(path).name for path in override_files] == ["runtime.json", "ports.yaml"]
         assert json.loads(Path(override_files[0]).read_text())["services"]["dev"]["environment"] == {
-            "EDITOR": "vim"
+            "CARTHAGE_AGENT_BINARY": "claude",
+            "CARTHAGE_AGENT_COMMAND": "claude --dangerously-skip-permissions",
+            "CARTHAGE_AGENT_KIND": "claude",
+            "CARTHAGE_AGENT_WINDOW": "claude",
+            "CARTHAGE_TMUX_SESSION": "carthage-session",
+            "EDITOR": "vim",
         }
         assert "ports: !reset []" in Path(override_files[1]).read_text()
     finally:

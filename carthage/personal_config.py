@@ -17,12 +17,21 @@ if sys.version_info >= (3, 11):
 else:  # pragma: no cover - fallback for 3.10
     import tomli as tomllib
 
+from carthage.agents import DEFAULT_AGENT_KIND, supported_agent_kinds
 from carthage.runtime import RuntimeEnv, RuntimeMount, RuntimeOverlay
 
 
 CURRENT_PERSONAL_CONFIG_SCHEMA = "1"
 MIN_READABLE_PERSONAL_CONFIG_SCHEMA = "1"
-RESERVED_ENVIRONMENT_NAMES = frozenset({"CARTHAGE", "CARTHAGE_PROJECT"})
+RESERVED_ENVIRONMENT_NAMES = frozenset({
+    "CARTHAGE",
+    "CARTHAGE_PROJECT",
+    "CARTHAGE_AGENT_BINARY",
+    "CARTHAGE_AGENT_COMMAND",
+    "CARTHAGE_AGENT_KIND",
+    "CARTHAGE_AGENT_WINDOW",
+    "CARTHAGE_TMUX_SESSION",
+})
 _APT_PACKAGE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9+.-]*$")
 
 
@@ -36,11 +45,18 @@ class PersonalImage:
 
 
 @dataclass(frozen=True)
+class PersonalAgents:
+    installed: tuple[str, ...] = (DEFAULT_AGENT_KIND,)
+    default: str = DEFAULT_AGENT_KIND
+
+
+@dataclass(frozen=True)
 class PersonalConfig:
     version: str = CURRENT_PERSONAL_CONFIG_SCHEMA
     mounts: tuple[PersonalMount, ...] = ()
     environment: tuple[PersonalEnvironment, ...] = ()
     image: PersonalImage = field(default_factory=PersonalImage)
+    agents: PersonalAgents = field(default_factory=PersonalAgents)
 
     @property
     def runtime_overlay(self) -> RuntimeOverlay:
@@ -127,9 +143,15 @@ def load_personal_config(path: Path | None = None) -> PersonalConfigResult:
     mounts, mount_warnings = _parse_mounts(data.get("mounts"), config_path)
     environment, env_warnings = _parse_environment(data.get("environment"), config_path)
     image_config, image_warnings = _parse_image(data.get("image"), config_path)
+    agents_config, agent_warnings = _parse_agents(
+        data.get("agents"),
+        data.get("agent"),
+        config_path,
+    )
     warnings.extend(mount_warnings)
     warnings.extend(env_warnings)
     warnings.extend(image_warnings)
+    warnings.extend(agent_warnings)
 
     return PersonalConfigResult(
         PersonalConfig(
@@ -137,6 +159,7 @@ def load_personal_config(path: Path | None = None) -> PersonalConfigResult:
             mounts=mounts,
             environment=environment,
             image=image_config,
+            agents=agents_config,
         ),
         tuple(warnings),
         config_path,
@@ -154,6 +177,14 @@ def describe_personal_config(result: PersonalConfigResult) -> str:
         counts.append(f"{len(result.config.environment)} env var(s)")
     if result.config.image.apt_packages:
         counts.append(f"{len(result.config.image.apt_packages)} apt package(s)")
+    if result.config.agents.default != DEFAULT_AGENT_KIND or result.config.agents.installed != (
+        DEFAULT_AGENT_KIND,
+    ):
+        counts.append(
+            "agents: "
+            f"{result.config.agents.default} default, "
+            f"{len(result.config.agents.installed)} installed"
+        )
     suffix = f" ({', '.join(counts)})" if counts else ""
     base = f"{result.path} schema '{result.config.version}'{suffix}"
     if result.warnings:
@@ -301,3 +332,77 @@ def _parse_image(raw: object, config_path: Path) -> tuple[PersonalImage, list[st
         packages.append(package)
 
     return PersonalImage(apt_packages=tuple(packages)), warnings
+
+
+def _parse_agents(
+    raw_agents: object,
+    raw_agent: object,
+    config_path: Path,
+) -> tuple[PersonalAgents, list[str]]:
+    """Parse agent selection.
+
+    Preferred shape:
+
+        [agents]
+        installed = ["claude"]
+        default = "claude"
+
+    The issue #4 sketch used `[agent].kind`; accept it as a compatibility
+    alias while converging on `[agents]` for multi-agent installs.
+    """
+    supported = set(supported_agent_kinds())
+    warnings: list[str] = []
+
+    if raw_agents is not None:
+        if not isinstance(raw_agents, dict):
+            return PersonalAgents(), [f"{config_path}: [agents] must be a table; using claude"]
+        installed_raw = raw_agents.get("installed", [DEFAULT_AGENT_KIND])
+        default_raw = raw_agents.get("default", DEFAULT_AGENT_KIND)
+    elif raw_agent is not None:
+        if not isinstance(raw_agent, dict):
+            return PersonalAgents(), [f"{config_path}: [agent] must be a table; using claude"]
+        kind_raw = raw_agent.get("kind", DEFAULT_AGENT_KIND)
+        installed_raw = [kind_raw]
+        default_raw = kind_raw
+    else:
+        return PersonalAgents(), []
+
+    if not isinstance(installed_raw, list) or not all(
+        isinstance(item, str) for item in installed_raw
+    ):
+        warnings.append(f"{config_path}: [agents].installed must be a list of strings; using claude")
+        installed = [DEFAULT_AGENT_KIND]
+    else:
+        installed = []
+        seen: set[str] = set()
+        for kind in installed_raw:
+            if kind in seen:
+                warnings.append(f"{config_path}: agent {kind!r} is duplicated; skipping")
+                continue
+            if kind not in supported:
+                warnings.append(f"{config_path}: agent {kind!r} is not supported; skipping")
+                continue
+            seen.add(kind)
+            installed.append(kind)
+        if not installed:
+            warnings.append(f"{config_path}: no supported agents configured; using claude")
+            installed = [DEFAULT_AGENT_KIND]
+
+    if not isinstance(default_raw, str) or default_raw == "":
+        warnings.append(f"{config_path}: [agents].default must be a string; using {installed[0]!r}")
+        default = installed[0]
+    elif default_raw not in supported:
+        warnings.append(f"{config_path}: default agent {default_raw!r} is not supported; using claude")
+        default = DEFAULT_AGENT_KIND
+        if default not in installed:
+            installed.insert(0, default)
+    elif default_raw not in installed:
+        warnings.append(
+            f"{config_path}: default agent {default_raw!r} is not in installed agents; adding it"
+        )
+        default = default_raw
+        installed.insert(0, default)
+    else:
+        default = default_raw
+
+    return PersonalAgents(installed=tuple(installed), default=default), warnings

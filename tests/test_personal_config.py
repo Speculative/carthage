@@ -1,5 +1,6 @@
 from carthage.personal_config import (
     CURRENT_PERSONAL_CONFIG_SCHEMA,
+    PersonalAgents,
     PersonalConfig,
     PersonalEnvironment,
     PersonalImage,
@@ -39,6 +40,10 @@ value = "vim"
 
 [image]
 apt_packages = ["fzf", "shellcheck"]
+
+[agents]
+installed = ["claude"]
+default = "claude"
 """
     )
 
@@ -56,6 +61,7 @@ apt_packages = ["fzf", "shellcheck"]
         ),
         environment=(PersonalEnvironment(id="editor", name="EDITOR", value="vim"),),
         image=PersonalImage(apt_packages=("fzf", "shellcheck")),
+        agents=PersonalAgents(installed=("claude",), default="claude"),
     )
     assert result.exists is True
     assert result.warnings == ()
@@ -166,3 +172,43 @@ apt_packages = ["ok-package", "bad/package", "ok-package"]
     assert len(result.warnings) == 2
     assert "not a valid apt package name" in result.warnings[0]
     assert "duplicated" in result.warnings[1]
+
+
+def test_legacy_agent_kind_is_accepted(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text(
+        """
+[carthage]
+personal_config_version = "1"
+
+[agent]
+kind = "claude"
+"""
+    )
+
+    result = load_personal_config(path)
+
+    assert result.config.agents == PersonalAgents(installed=("claude",), default="claude")
+    assert result.warnings == ()
+
+
+def test_unknown_agents_are_skipped(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text(
+        """
+[carthage]
+personal_config_version = "1"
+
+[agents]
+installed = ["codex", "claude", "claude"]
+default = "codex"
+"""
+    )
+
+    result = load_personal_config(path)
+
+    assert result.config.agents == PersonalAgents(installed=("claude",), default="claude")
+    assert len(result.warnings) == 3
+    assert "agent 'codex' is not supported" in result.warnings[0]
+    assert "agent 'claude' is duplicated" in result.warnings[1]
+    assert "default agent 'codex' is not supported" in result.warnings[2]

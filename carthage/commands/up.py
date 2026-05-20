@@ -20,10 +20,11 @@ import click
 from rich.console import Console
 
 from carthage import __version__, annex_template_is_outdated, compose, image, ports
+from carthage.agents import get_agent_profile
 from carthage.config import CarthageConfig, ConfigError, load_config
 from carthage.personal_config import PersonalConfigResult, load_personal_config
 from carthage.personal_image import build_personal_image, personal_image_ref
-from carthage.runtime import filter_disabled_overlay, render_compose_overlay
+from carthage.runtime import filter_disabled_overlay, merge_overlays, render_compose_overlay
 
 console = Console()
 
@@ -281,7 +282,12 @@ def _personal_compose_override_content(
         return None
 
     disabled = set(cfg.personal_disabled)
-    overlay = filter_disabled_overlay(personal.config.runtime_overlay, disabled)
+    agent = get_agent_profile(personal.config.agents.default)
+    agent_overlay = agent.runtime_overlay if agent is not None else None
+    personal_overlay = filter_disabled_overlay(personal.config.runtime_overlay, disabled)
+    overlay = merge_overlays(
+        *(item for item in (personal_overlay, agent_overlay) if item is not None)
+    )
     return render_compose_overlay(cfg.service_name, overlay)
 
 
