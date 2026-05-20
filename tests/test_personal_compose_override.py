@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from carthage.commands.up import _build_compose_args
+from carthage.commands.up import _build_compose_args, _resolve_runtime_env
 from carthage.config import load_config
 from carthage.personal_config import load_personal_config
 
@@ -80,6 +80,7 @@ def test_personal_compose_override_adds_mounts_and_environment(tmp_path):
         "CARTHAGE_AGENT_BINARY": "claude",
         "CARTHAGE_AGENT_COMMAND": "claude --dangerously-skip-permissions",
         "CARTHAGE_AGENT_KIND": "claude",
+        "CARTHAGE_AGENT_UPDATE_COMMAND": "",
         "CARTHAGE_AGENT_WINDOW": "claude",
         "CARTHAGE_TMUX_SESSION": "carthage-session",
         "EDITOR": "vim",
@@ -124,6 +125,7 @@ disable = ["notes", "editor"]
         "CARTHAGE_AGENT_BINARY": "claude",
         "CARTHAGE_AGENT_COMMAND": "claude --dangerously-skip-permissions",
         "CARTHAGE_AGENT_KIND": "claude",
+        "CARTHAGE_AGENT_UPDATE_COMMAND": "",
         "CARTHAGE_AGENT_WINDOW": "claude",
         "CARTHAGE_TMUX_SESSION": "carthage-session",
     }
@@ -153,6 +155,7 @@ def test_personal_and_port_overrides_are_separate_files(tmp_path):
             "CARTHAGE_AGENT_BINARY": "claude",
             "CARTHAGE_AGENT_COMMAND": "claude --dangerously-skip-permissions",
             "CARTHAGE_AGENT_KIND": "claude",
+            "CARTHAGE_AGENT_UPDATE_COMMAND": "",
             "CARTHAGE_AGENT_WINDOW": "claude",
             "CARTHAGE_TMUX_SESSION": "carthage-session",
             "EDITOR": "vim",
@@ -189,6 +192,7 @@ default = "codex"
         "CARTHAGE_AGENT_BINARY": "codex",
         "CARTHAGE_AGENT_COMMAND": "codex --dangerously-bypass-approvals-and-sandbox",
         "CARTHAGE_AGENT_KIND": "codex",
+        "CARTHAGE_AGENT_UPDATE_COMMAND": "codex update",
         "CARTHAGE_AGENT_WINDOW": "codex",
         "CARTHAGE_TMUX_SESSION": "carthage-session",
     }
@@ -198,3 +202,14 @@ default = "codex"
         "target": "/home/carthage/.codex",
         "read_only": False,
     } in service["volumes"]
+
+
+def test_agent_auto_update_env_tracks_offline_flag(tmp_path):
+    _write_project(tmp_path)
+    cfg = load_config(tmp_path)
+
+    online = _resolve_runtime_env(cfg, offline=False)
+    offline = _resolve_runtime_env(cfg, offline=True)
+
+    assert online["CARTHAGE_AGENT_AUTO_UPDATE"] == "1"
+    assert offline["CARTHAGE_AGENT_AUTO_UPDATE"] == "0"

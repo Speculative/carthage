@@ -22,7 +22,17 @@ fi
 tmux_session="${CARTHAGE_TMUX_SESSION:-carthage-session}"
 agent_window="${CARTHAGE_AGENT_WINDOW:-claude}"
 agent_command="${CARTHAGE_AGENT_COMMAND:-claude --dangerously-skip-permissions}"
+agent_update_command="${CARTHAGE_AGENT_UPDATE_COMMAND:-}"
 tmux_agent_command="bash -lc '${agent_command}; exec bash -l'"
+
+if [ "${CARTHAGE_AGENT_AUTO_UPDATE:-0}" = "1" ] && [ -n "${agent_update_command}" ]; then
+    log "updating agent with: ${agent_update_command}"
+    if ${agent_update_command}; then
+        log "agent update complete"
+    else
+        log "agent update failed; continuing"
+    fi
+fi
 
 # --- tmux session for the configured agent ---------------------------------
 # Agent auto-approval flags are appropriate here because the sandbox *is* the

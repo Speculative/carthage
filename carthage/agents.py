@@ -22,6 +22,7 @@ class AgentProfile:
     launch_command: str
     tmux_window: str
     install_user: str = "root"
+    update_command: str | None = None
     auth_mounts: tuple[RuntimeMount, ...] = ()
     managed_skill_dir: str | None = None
 
@@ -39,6 +40,7 @@ class AgentProfile:
                 RuntimeEnv("agent-command", "CARTHAGE_AGENT_COMMAND", self.launch_command),
                 RuntimeEnv("agent-window", "CARTHAGE_AGENT_WINDOW", self.tmux_window),
                 RuntimeEnv("tmux-session", "CARTHAGE_TMUX_SESSION", DEFAULT_TMUX_SESSION),
+                RuntimeEnv("agent-update-command", "CARTHAGE_AGENT_UPDATE_COMMAND", self.update_command or ""),
             )
         return RuntimeOverlay(
             mounts=self.auth_mounts if include_mounts else (),
@@ -73,6 +75,7 @@ CODEX_PROFILE = AgentProfile(
         "codex --version",
     ),
     install_user="carthage",
+    update_command="codex update",
     launch_command="codex --dangerously-bypass-approvals-and-sandbox",
     tmux_window="codex",
     auth_mounts=(

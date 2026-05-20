@@ -168,7 +168,7 @@ def up(force_rebuild: bool, offline: bool, no_host_ports: bool, port_overrides: 
     cfg.host_state_dir.mkdir(parents=True, exist_ok=True)
 
     # --- Start ---
-    env_overrides = _resolve_runtime_env(cfg)
+    env_overrides = _resolve_runtime_env(cfg, offline=offline)
     console.print(f"[cyan]starting[/cyan] service '{cfg.service_name}'…")
     try:
         compose.run(cfg, compose_args + ["up", "-d"], env_overrides=env_overrides)
@@ -206,7 +206,7 @@ def _uses_personal_image(cfg: CarthageConfig) -> bool:
     return from_ref == personal_image_ref(cfg.base_image_tag)
 
 
-def _resolve_runtime_env(cfg: CarthageConfig) -> dict[str, str]:
+def _resolve_runtime_env(cfg: CarthageConfig, *, offline: bool = False) -> dict[str, str]:
     """Compose env overrides we resolve per-invocation (not stored in the
     compose file itself): memory limit, cpu count, base-image version.
 
@@ -227,6 +227,7 @@ def _resolve_runtime_env(cfg: CarthageConfig) -> dict[str, str]:
     if cpus > 1:
         overrides["CARTHAGE_CPUS"] = str(max(1, cpus - 1))
     overrides["CARTHAGE_BASE_IMAGE_VERSION"] = image.get_base_image_version(cfg.base_image) or ""
+    overrides["CARTHAGE_AGENT_AUTO_UPDATE"] = "0" if offline else "1"
     return overrides
 
 
