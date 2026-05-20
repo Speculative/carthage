@@ -23,7 +23,11 @@ from carthage import __version__, annex_template_is_outdated, compose, image, po
 from carthage.agents import AgentConfigError, agent_profiles_for, require_agent_profile
 from carthage.config import CarthageConfig, ConfigError, load_config
 from carthage.personal_config import PersonalConfigResult, load_personal_config
-from carthage.personal_image import build_personal_image, personal_image_ref
+from carthage.personal_image import (
+    build_personal_image,
+    personal_image_is_current,
+    personal_image_ref,
+)
 from carthage.runtime import filter_disabled_overlay, merge_overlays, render_compose_overlay
 
 console = Console()
@@ -108,12 +112,36 @@ def up(force_rebuild: bool, offline: bool, no_host_ports: bool, port_overrides: 
 
     if _uses_personal_image(cfg):
         personal_ref = personal_image_ref(cfg.base_image_tag)
-        console.print(f"[cyan]refreshing[/cyan] {personal_ref}…")
-        ok, detail = build_personal_image(
+        current, current_detail = personal_image_is_current(
+            image_ref=personal_ref,
             base_image=cfg.base_image,
-            target_image=personal_ref,
             config=personal.config,
         )
+        if current:
+            console.print(f"[green]personal image current[/green] ({current_detail})")
+            ok = True
+            detail = current_detail
+        elif offline:
+            if image.local_image_exists(*personal_ref.rsplit(":", 1)):
+                console.print(
+                    f"[yellow]warning:[/yellow] personal image {personal_ref} is "
+                    f"{current_detail}; using local cache because --offline is set."
+                )
+                ok = True
+                detail = current_detail
+            else:
+                ok = False
+                detail = (
+                    f"{personal_ref} is missing and --offline is set; "
+                    "run `carthage fortify` while online first"
+                )
+        else:
+            console.print(f"[cyan]refreshing[/cyan] {personal_ref} ({current_detail})…")
+            ok, detail = build_personal_image(
+                base_image=cfg.base_image,
+                target_image=personal_ref,
+                config=personal.config,
+            )
         if not ok:
             console.print(
                 f"[red]personal image build failed:[/red] {detail}. "

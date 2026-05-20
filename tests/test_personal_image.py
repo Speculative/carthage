@@ -1,5 +1,12 @@
 from carthage.personal_config import PersonalAgents, PersonalConfig, PersonalImage
-from carthage.personal_image import personal_image_ref, render_personal_image_dockerfile
+from carthage.personal_image import (
+    PERSONAL_IMAGE_HASH_LABEL,
+    personal_image_is_current,
+    personal_image_hash,
+    personal_image_ref,
+    read_personal_image_hash,
+    render_personal_image_dockerfile,
+)
 
 
 def test_personal_image_ref_defaults_to_expected_tag():
@@ -19,6 +26,7 @@ def test_render_personal_image_without_packages():
     )
 
     assert "FROM ghcr.io/speculative/carthage-base:v1" in dockerfile
+    assert f"LABEL {PERSONAL_IMAGE_HASH_LABEL}=" in dockerfile
     assert "apt-get install" not in dockerfile
     assert dockerfile.endswith("WORKDIR /workspace\n")
 
@@ -49,3 +57,84 @@ def test_render_personal_image_installs_codex_agent():
     assert "RUN npm install -g @openai/codex" in dockerfile
     assert "RUN codex --version" in dockerfile
     assert "RUN codex --version\nUSER root" in dockerfile
+
+
+def test_personal_image_hash_tracks_image_affecting_config():
+    base = personal_image_hash(
+        base_image="ghcr.io/speculative/carthage-base:v1",
+        config=PersonalConfig(
+            agents=PersonalAgents(installed=("codex",), default="codex"),
+            image=PersonalImage(apt_packages=("fzf",)),
+        ),
+    )
+    different_default = personal_image_hash(
+        base_image="ghcr.io/speculative/carthage-base:v1",
+        config=PersonalConfig(
+            agents=PersonalAgents(installed=("codex",), default="claude"),
+            image=PersonalImage(apt_packages=("fzf",)),
+        ),
+    )
+    different_agent = personal_image_hash(
+        base_image="ghcr.io/speculative/carthage-base:v1",
+        config=PersonalConfig(
+            agents=PersonalAgents(installed=("claude",), default="claude"),
+            image=PersonalImage(apt_packages=("fzf",)),
+        ),
+    )
+    different_package = personal_image_hash(
+        base_image="ghcr.io/speculative/carthage-base:v1",
+        config=PersonalConfig(
+            agents=PersonalAgents(installed=("codex",), default="codex"),
+            image=PersonalImage(apt_packages=("ripgrep",)),
+        ),
+    )
+
+    assert different_default == base
+    assert different_agent != base
+    assert different_package != base
+
+
+def test_personal_image_is_current_compares_stored_hash(monkeypatch):
+    config = PersonalConfig(agents=PersonalAgents(installed=("codex",), default="codex"))
+    expected = personal_image_hash(base_image="base:v1", config=config)
+    monkeypatch.setattr(
+        "carthage.personal_image.read_personal_image_hash",
+        lambda image_ref: expected,
+    )
+
+    current, detail = personal_image_is_current(
+        image_ref="personal:v1",
+        base_image="base:v1",
+        config=config,
+    )
+
+    assert current is True
+    assert expected in detail
+
+
+def test_personal_image_is_current_detects_stale_hash(monkeypatch):
+    config = PersonalConfig(agents=PersonalAgents(installed=("codex",), default="codex"))
+    monkeypatch.setattr(
+        "carthage.personal_image.read_personal_image_hash",
+        lambda image_ref: "old",
+    )
+
+    current, detail = personal_image_is_current(
+        image_ref="personal:v1",
+        base_image="base:v1",
+        config=config,
+    )
+
+    assert current is False
+    assert "stale" in detail
+
+
+def test_read_personal_image_hash_handles_missing_image(monkeypatch):
+    import subprocess
+
+    def fake_run(*args, **kwargs):
+        raise subprocess.CalledProcessError(1, "docker")
+
+    monkeypatch.setattr("carthage.personal_image.subprocess.run", fake_run)
+
+    assert read_personal_image_hash("missing:v1") is None

@@ -25,7 +25,11 @@ from carthage import BASE_IMAGE_REPO, EXPECTED_BASE_IMAGE_TAG, __version__
 from carthage import image as base_image
 from carthage.agents import AgentProfile, AgentConfigError, agent_profiles_for, require_agent_profile
 from carthage.personal_config import describe_personal_config, load_personal_config
-from carthage.personal_image import build_personal_image, personal_image_ref
+from carthage.personal_image import (
+    build_personal_image,
+    personal_image_is_current,
+    personal_image_ref,
+)
 from carthage.skills import MANAGED_SKILLS, SKILLS_DIR, read_skill_version
 
 console = Console()
@@ -193,12 +197,20 @@ def fortify(force: bool) -> None:
             rows.append(("base image refresh", False, pull_detail))
         else:
             rows.append(("base image refresh", True, pull_detail))
-            build_ok, build_detail = build_personal_image(
+            current, current_detail = personal_image_is_current(
+                image_ref=target_image,
                 base_image=source_image,
-                target_image=target_image,
                 config=personal.config,
             )
-            rows.append(("personal image", build_ok, build_detail))
+            if current:
+                rows.append(("personal image", True, current_detail))
+            else:
+                build_ok, build_detail = build_personal_image(
+                    base_image=source_image,
+                    target_image=target_image,
+                    config=personal.config,
+                )
+                rows.append(("personal image", build_ok, build_detail))
 
     # Proceed with skill installs even if deps failed — users should see the
     # full state in one shot, not dep errors only.
