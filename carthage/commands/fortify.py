@@ -1,8 +1,9 @@
 """`carthage fortify` — one-time host setup.
 
-Does dependency checks, then installs the personal Claude skills into
-`~/.claude/skills/` at the version matching the installed CLI. Idempotent —
-re-run after `uv tool upgrade carthage-cli` to pull in matching skill updates.
+Does dependency checks, then installs personal Carthage skills into
+`~/.carthage/skills/` at the version matching the installed CLI and links
+configured agents to that canonical copy. Idempotent — re-run after
+`uv tool upgrade carthage-cli` to pull in matching skill updates.
 
 Skill files are bundled into the CLI wheel via hatch `force-include` (see
 pyproject.toml). At runtime we read them out of `importlib.resources` and
@@ -23,14 +24,24 @@ from rich.console import Console
 
 from carthage import BASE_IMAGE_REPO, EXPECTED_BASE_IMAGE_TAG, __version__
 from carthage import image as base_image
-from carthage.agents import AgentProfile, AgentConfigError, agent_profiles_for, require_agent_profile
+from carthage.agents import (
+    AgentConfigError,
+    AgentProfile,
+    agent_profiles_for,
+    require_agent_profile,
+)
 from carthage.personal_config import describe_personal_config, load_personal_config
 from carthage.personal_image import (
     build_personal_image,
     personal_image_is_current,
     personal_image_ref,
 )
-from carthage.skills import MANAGED_SKILLS, SKILLS_DIR, read_skill_version
+from carthage.skills import (
+    MANAGED_SKILLS,
+    SKILLS_DIR,
+    agent_skill_path,
+    read_skill_version,
+)
 
 console = Console()
 
@@ -65,7 +76,7 @@ def _check_claude_dir() -> tuple[bool, str]:
     if not p.is_dir():
         return False, (
             f"{p} does not exist. Run `claude` on the host once to authenticate "
-            "to Claude Code before using Carthage."
+            "before using Carthage with Claude."
         )
     return True, str(p)
 
@@ -124,7 +135,7 @@ def _copy_skill_from_package(name: str, target: Path) -> None:
 
 
 def _install_skill(name: str, *, force: bool = False) -> tuple[bool, str]:
-    """Install (or refresh) the named skill at ~/.claude/skills/<name>/.
+    """Install (or refresh) the named skill at ~/.carthage/skills/<name>/.
 
     Idempotent: if the installed SKILL.md already reports the CLI's version
     and the directory exists, this is a no-op unless `force=True`.
@@ -151,6 +162,28 @@ def _install_skill(name: str, *, force: bool = False) -> tuple[bool, str]:
             f"(CLI is v{__version__})"
         )
     return True, f"installed v{__version__}"
+
+
+def _link_skill_for_agent(profile: AgentProfile, name: str) -> tuple[bool, str]:
+    """Expose a canonical Carthage skill through an agent discovery path."""
+    if profile.managed_skill_dir is None:
+        return True, "agent has no managed skill directory"
+
+    source = SKILLS_DIR / name
+    target = agent_skill_path(profile.managed_skill_dir, name)
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target.is_symlink() and target.resolve() == source.resolve():
+            return True, f"linked {target}"
+        if target.exists() or target.is_symlink():
+            if target.is_dir() and not target.is_symlink():
+                shutil.rmtree(target)
+            else:
+                target.unlink()
+        target.symlink_to(source, target_is_directory=True)
+    except OSError as exc:
+        return False, f"failed to link {target} -> {source}: {exc}"
+    return True, f"linked {target}"
 
 
 # --- CLI ------------------------------------------------------------------
@@ -214,10 +247,19 @@ def fortify(force: bool) -> None:
 
     # Proceed with skill installs even if deps failed — users should see the
     # full state in one shot, not dep errors only.
-    if "claude" in personal.config.agents.installed:
+    skill_agents = tuple(
+        profile
+        for profile in agent_profiles_for(personal.config.agents.installed)
+        if profile.managed_skill_dir is not None
+    )
+    if skill_agents:
         for name in MANAGED_SKILLS:
             sok, sdetail = _install_skill(name, force=force)
             rows.append((f"skill: {name}", sok, sdetail))
+            if sok:
+                for profile in skill_agents:
+                    lok, ldetail = _link_skill_for_agent(profile, name)
+                    rows.append((f"skill link: {profile.kind}/{name}", lok, ldetail))
 
     any_failed = False
     for label, row_ok, detail in rows:

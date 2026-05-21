@@ -29,7 +29,7 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["carthage"]
 
-# Bundle the personal Claude skills into the wheel so `carthage fortify` can
+# Bundle the personal Carthage skills into the wheel so `carthage fortify` can
 # copy them out of package data at install time — no network, no git required.
 # They end up at `carthage/_skills/<name>/` inside the installed package.
 [tool.hatch.build.targets.wheel.force-include]

@@ -98,6 +98,18 @@ def test_personal_compose_override_adds_mounts_and_environment(tmp_path):
             "target": "/scratch",
             "read_only": False,
         },
+        {
+            "type": "bind",
+            "source": "${HOME}/.claude",
+            "target": "/home/carthage/.claude",
+            "read_only": False,
+        },
+        {
+            "type": "bind",
+            "source": "${HOME}/.claude.json",
+            "target": "/home/carthage/.claude.json",
+            "read_only": False,
+        },
     ]
 
 
@@ -134,6 +146,18 @@ disable = ["notes", "editor"]
             "type": "bind",
             "source": "/tmp/scratch",
             "target": "/scratch",
+            "read_only": False,
+        },
+        {
+            "type": "bind",
+            "source": "${HOME}/.claude",
+            "target": "/home/carthage/.claude",
+            "read_only": False,
+        },
+        {
+            "type": "bind",
+            "source": "${HOME}/.claude.json",
+            "target": "/home/carthage/.claude.json",
             "read_only": False,
         },
     ]
@@ -198,10 +222,55 @@ default = "codex"
     }
     assert {
         "type": "bind",
+        "source": "${HOME}/.claude",
+        "target": "/home/carthage/.claude",
+        "read_only": False,
+    } in service["volumes"]
+    assert {
+        "type": "bind",
+        "source": "${HOME}/.claude.json",
+        "target": "/home/carthage/.claude.json",
+        "read_only": False,
+    } in service["volumes"]
+    assert {
+        "type": "bind",
         "source": "${HOME}/.codex",
         "target": "/home/carthage/.codex",
         "read_only": False,
     } in service["volumes"]
+
+
+def test_codex_only_config_does_not_mount_claude_auth(tmp_path):
+    _write_project(tmp_path)
+    personal_path = tmp_path / "personal.toml"
+    personal_path.write_text(
+        """
+[carthage]
+personal_config_version = "1"
+
+[agents]
+installed = ["codex"]
+default = "codex"
+"""
+    )
+    cfg = load_config(tmp_path)
+    personal = load_personal_config(personal_path)
+
+    args, cleanup = _build_compose_args(cfg, False, [], personal)
+    try:
+        content = json.loads(Path(args[-1]).read_text())
+    finally:
+        cleanup()
+
+    service = content["services"]["dev"]
+    assert service["volumes"] == [
+        {
+            "type": "bind",
+            "source": "${HOME}/.codex",
+            "target": "/home/carthage/.codex",
+            "read_only": False,
+        },
+    ]
 
 
 def test_agent_auto_update_env_tracks_offline_flag(tmp_path):

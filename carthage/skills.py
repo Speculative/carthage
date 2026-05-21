@@ -1,14 +1,13 @@
-"""Helpers for reading the personal skills installed at `~/.claude/skills/`.
+"""Helpers for reading the personal skills installed by Carthage.
 
-Carthage manages two personal skills:
-  - `carthage-annex`   — annex a project into Carthage. Implemented.
-  - `carthage-migrate` — schema migrations between major versions.
-                         Reserved; not implemented in v1.
+Carthage manages one personal skill:
+  - `carthage-annex` — annex a project into Carthage.
 
 Both are installed by `carthage fortify` from package data bundled into the
-CLI wheel. Each SKILL.md's frontmatter carries a `version` field equal to
-the CLI version it shipped with — `survey` and `--version` flag drift if
-someone hand-edits a SKILL.md.
+CLI wheel. The canonical copy lives under `~/.carthage/skills/`; agent
+discovery paths link to that single copy. Each SKILL.md's frontmatter carries
+a `version` field equal to the CLI version it shipped with — `survey` and
+`--version` flag drift if someone hand-edits a SKILL.md.
 """
 
 from __future__ import annotations
@@ -16,15 +15,23 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-# The skills we expect `carthage fortify` to have installed. A future skill
-# (e.g. carthage-migrate) is added here when it lands.
+# The skills we expect `carthage fortify` to have installed.
 MANAGED_SKILLS: tuple[str, ...] = ("carthage-annex",)
 
-SKILLS_DIR = Path.home() / ".claude" / "skills"
+CARTHAGE_HOME = Path.home() / ".carthage"
+SKILLS_DIR = CARTHAGE_HOME / "skills"
 
 
 def skill_path(name: str) -> Path:
     return SKILLS_DIR / name / "SKILL.md"
+
+
+def agent_skill_dir(raw_dir: str) -> Path:
+    return Path(raw_dir).expanduser()
+
+
+def agent_skill_path(raw_dir: str, name: str) -> Path:
+    return agent_skill_dir(raw_dir) / name
 
 
 def read_skill_version(name: str) -> str | None:

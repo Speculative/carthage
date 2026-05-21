@@ -72,15 +72,14 @@ def up(force_rebuild: bool, offline: bool, no_host_ports: bool, port_overrides: 
     if cfg.schema_is_outdated:
         console.print(
             f"[yellow]note:[/yellow] config schema '{cfg.version}' is older than "
-            "current. Still readable, but consider running `/carthage-migrate` "
-            "from Claude Code in this project."
+            "current. Still readable, but consider upgrading the project config."
         )
 
     if annex_template_is_outdated(cfg.annexed_with_cli):
         console.print(
             f"[yellow]note:[/yellow] this project was annexed under CLI "
             f"{cfg.annexed_with_cli or 'pre-1.0'}; current CLI is {__version__}. "
-            "Run /carthage-annex --upgrade from Claude Code to pick up template "
+            "Run /carthage-annex --upgrade from an agent session to pick up template "
             "improvements (mounts, labels, etc.)."
         )
 
@@ -317,7 +316,6 @@ def _personal_compose_override_content(
     agent_mount_overlays = tuple(
         profile.runtime_overlay()
         for profile in agent_profiles_for(personal.config.agents.installed)
-        if profile.kind != "claude"
     )
     agent_launch_overlay = require_agent_profile(
         personal.config.agents.default

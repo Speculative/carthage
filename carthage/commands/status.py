@@ -221,7 +221,7 @@ def _status_current() -> None:
         table.add_row("running base", row)
 
     table.add_row("config schema", cfg.version + (
-        " [yellow](outdated — run /carthage-migrate)[/yellow]" if cfg.schema_is_outdated else ""
+        " [yellow](outdated)[/yellow]" if cfg.schema_is_outdated else ""
     ))
 
     annex_label = cfg.annexed_with_cli or "pre-1.0"

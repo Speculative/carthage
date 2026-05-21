@@ -9,8 +9,8 @@ description: Describes the Carthage sandbox environment this project runs inside
 If the `$CARTHAGE` environment variable is set, you are running inside a
 Carthage sandbox container. Read `/etc/carthage/SANDBOX.md` for the rules
 that apply to this environment — scoped mounts, no sudo, commit workflow,
-`--dangerously-skip-permissions` guidance, and how to request additional
-services or system packages. Note in particular that the host LAN is *not*
+agent permission-bypass guidance, and how to request additional services or
+system packages. Note in particular that the host LAN is *not*
 firewalled off; the container can reach anything the host user can reach.
 
 If `$CARTHAGE` is unset, this skill is a no-op. You are on the host, and

@@ -5,13 +5,13 @@ Split from `status`: status is for "is the current project running?"
 runs occasionally — pulls images, may spin up test containers).
 
 Survey reports; it never fixes. The user runs `carthage fortify` if skills
-drift, `/carthage-migrate` if config schemas drift, edits the Dockerfile
-themselves if the base image major moved.
+drift and edits project files themselves if config schemas or base image
+majors move.
 
 Checks performed:
   - docker CLI + daemon reachable
   - `docker compose` v2 plugin works
-  - host ~/.claude exists and is readable
+  - configured agent auth directories exist and are readable
   - host UID/GID sensible (not root)
   - installed skill versions match the CLI version
   - (if inside a project) base image pullable
@@ -44,8 +44,13 @@ from carthage import (
     annex_template_is_outdated,
 )
 from carthage import image as carthage_image
+from carthage.agents import AgentProfile, agent_profiles_for
 from carthage.config import ConfigError, load_config
-from carthage.personal_config import describe_personal_config, load_personal_config
+from carthage.personal_config import (
+    PersonalConfigResult,
+    describe_personal_config,
+    load_personal_config,
+)
 from carthage.skills import MANAGED_SKILLS, read_skill_version
 
 console = Console()
@@ -93,14 +98,36 @@ def check_compose_v2() -> tuple[bool, str]:
     return True, r.stdout.strip().splitlines()[0] if r.stdout.strip() else "ok"
 
 
-@_check("host ~/.claude exists and is readable")
-def check_claude_dir() -> tuple[bool, str]:
-    p = Path.home() / ".claude"
-    if not p.exists():
-        return False, f"{p} does not exist. Run `claude` on the host once to authenticate."
-    if not os.access(p, os.R_OK):
-        return False, f"{p} exists but is not readable"
-    return True, str(p)
+def _check_readable_dir(path: Path, login_hint: str) -> tuple[bool, str]:
+    if not path.exists():
+        return False, f"{path} does not exist. {login_hint}"
+    if not os.access(path, os.R_OK):
+        return False, f"{path} exists but is not readable"
+    return True, str(path)
+
+
+def _agent_auth_dir(profile: AgentProfile) -> tuple[Path, str] | None:
+    if profile.kind == "claude":
+        return Path.home() / ".claude", "Run `claude` on the host once to authenticate."
+    if profile.kind == "codex":
+        return Path.home() / ".codex", "Run `codex --login` on the host first."
+    return None
+
+
+def check_agent_auth_dirs(personal: PersonalConfigResult) -> list[CheckResult]:
+    results: list[CheckResult] = []
+    for profile in agent_profiles_for(personal.config.agents.installed):
+        auth = _agent_auth_dir(profile)
+        if auth is None:
+            continue
+        path, hint = auth
+        ok, detail = _check_readable_dir(path, hint)
+        results.append(CheckResult(f"{profile.kind} auth dir", ok, detail))
+    if not results:
+        results.append(
+            CheckResult("agent auth dirs", True, "no installed agents configured")
+        )
+    return results
 
 
 @_check("host UID/GID are sensible")
@@ -109,12 +136,6 @@ def check_uid_gid() -> tuple[bool, str]:
     if uid == 0:
         return False, "you are running as root (UID 0). Carthage expects a regular user."
     return True, f"uid={uid} gid={gid}"
-
-
-@_check("personal config")
-def check_personal_config() -> tuple[bool, str]:
-    result = load_personal_config()
-    return True, describe_personal_config(result)
 
 
 @_check("installed skills match CLI version")
@@ -169,7 +190,7 @@ def check_config_schema(cfg) -> tuple[bool, str]:
     if cfg.schema_is_outdated:
         return True, (
             f"schema '{cfg.version}' is older than current '{CURRENT_CONFIG_SCHEMA}' "
-            "but still readable. Run `/carthage-migrate` to upgrade."
+            "but still readable."
         )
     return True, f"schema '{cfg.version}' (current)"
 
@@ -294,6 +315,7 @@ def survey(deep: bool, base_image: str | None) -> None:
     if base_image is None:
         base_image = cfg.base_image if cfg else _default_base_image()
 
+    personal = load_personal_config()
     results: list[CheckResult] = [
         check_docker_present(),
         check_docker_daemon(),
@@ -301,8 +323,8 @@ def survey(deep: bool, base_image: str | None) -> None:
     docker_up = results[0].ok and results[1].ok
     if docker_up:
         results.append(check_compose_v2())
-    results.append(check_claude_dir())
-    results.append(check_personal_config())
+    results.append(CheckResult("personal config", True, describe_personal_config(personal)))
+    results.extend(check_agent_auth_dirs(personal))
     results.append(check_uid_gid())
     results.append(check_skill_versions())
 

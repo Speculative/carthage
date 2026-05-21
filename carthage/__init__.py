@@ -1,8 +1,8 @@
 """Carthage — sandboxed dev-environment management.
 
-Three artifacts share one semver: the CLI, the personal Claude skills
-(`/carthage-annex` today, `/carthage-migrate` reserved), and the
-`carthage-base` Docker image. The skills ship inside the CLI wheel via
+Three artifacts share one semver: the CLI, the personal Carthage skills
+(`/carthage-annex` today), and the `carthage-base` Docker image. The
+skills ship inside the CLI wheel via
 `tool.hatch.build.targets.wheel.force-include`, so installing CLI vN.M
 means skill vN.M is on disk after `carthage fortify` — no drift possible.
 
@@ -15,7 +15,7 @@ __version__ = "1.2.0"
 
 # The schema version the CLI currently *writes*. Config files with this
 # `version` are read natively; older schemas in the backward-compat window are
-# read with a warning; anything older requires /carthage-migrate.
+# read with a warning; anything older requires a manual project upgrade.
 CURRENT_CONFIG_SCHEMA = "1"
 
 # Oldest config schema this CLI can still read. Typically CURRENT - 1 (one

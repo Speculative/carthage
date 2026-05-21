@@ -19,8 +19,8 @@ This avoids one class of drift (tag in config disagrees with `FROM` in
 Dockerfile). The CLI synthesizes `ghcr.io/speculative/carthage-base:<tag>`.
 
 The CLI accepts config schemas one major back: a `v2` CLI reads `version=1`
-configs (with a soft note pointing at `/carthage-migrate`). Anything older
-than that is rejected; anything newer means the CLI is out of date.
+configs with a soft note. Anything older than that is rejected; anything
+newer means the CLI is out of date.
 """
 
 from __future__ import annotations
@@ -46,8 +46,7 @@ class ConfigError(RuntimeError):
 
 
 class SchemaTooOldError(ConfigError):
-    """The config schema is older than this CLI can still read. Point user at
-    `/carthage-migrate`."""
+    """The config schema is older than this CLI can still read."""
 
 
 @dataclass(frozen=True)
@@ -113,7 +112,7 @@ def find_project_root(start: Path | None = None) -> Path:
             return candidate
     raise ConfigError(
         "No `.carthage/config.toml` found in this directory or any parent. "
-        "Run `/carthage-annex` in Claude Code to set up this project first."
+        "Run `/carthage-annex` from a configured agent to set up this project first."
     )
 
 
@@ -150,8 +149,8 @@ def load_config(project_root: Path | None = None) -> CarthageConfig:
         raise SchemaTooOldError(
             f"{config_path}: schema version '{schema_version}' is older than this "
             f"CLI can read (min: '{MIN_READABLE_CONFIG_SCHEMA}', current: "
-            f"'{CURRENT_CONFIG_SCHEMA}'). Run `/carthage-migrate` in this project "
-            "from Claude Code to upgrade the config."
+            f"'{CURRENT_CONFIG_SCHEMA}'). Upgrade the project config before "
+            "using this CLI."
         )
     schema_is_outdated = schema_version < CURRENT_CONFIG_SCHEMA
     if schema_version > CURRENT_CONFIG_SCHEMA:

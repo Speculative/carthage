@@ -6,6 +6,29 @@ This changelog covers the *templates* this skill generates: `.carthage/Dockerfil
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions match the CLI/skill semver.
 
+## [2.0.0] — 2026-05-20
+
+### Changed
+- **Agent auth mounts are no longer committed in project compose files.**
+  `carthage up` injects auth mounts from the user's personal agent config, so
+  a project can be used with Claude, Codex, or another supported agent without
+  editing `.carthage/docker-compose.yaml`.
+- **Generated projects use Carthage-owned environment skills for each agent
+  discovery path** instead of storing Carthage guidance in `AGENTS.md`.
+
+### Migration for existing projects
+Remove Claude-specific auth mounts from `.carthage/docker-compose.yaml`:
+
+```yaml
+      - ${HOME}/.claude:/home/carthage/.claude:rw
+      - ${HOME}/.claude.json:/home/carthage/.claude.json:rw
+```
+
+Then add or refresh the project-local `carthage-env` skill generated from the
+current template under the agent discovery paths you want the project to
+support, such as `.claude/skills/carthage-env/SKILL.md` and
+`.agents/skills/carthage-env/SKILL.md`.
+
 ## [1.3.0] — 2026-05-19
 
 ### Changed

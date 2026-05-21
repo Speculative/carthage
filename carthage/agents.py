@@ -81,6 +81,7 @@ CODEX_PROFILE = AgentProfile(
     auth_mounts=(
         RuntimeMount("agent-codex-dir", "${HOME}/.codex", "/home/carthage/.codex", "rw"),
     ),
+    managed_skill_dir="~/.codex/skills",
 )
 
 

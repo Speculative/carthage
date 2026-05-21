@@ -67,12 +67,6 @@ services:
 
     volumes:
       - ..:/workspace:rw
-      - ${HOME}/.claude:/home/carthage/.claude:rw
-      # ~/.claude.json is a sibling of ~/.claude (NOT inside it) and holds the
-      # OAuth account + login state. Without this mount, Claude Code starts
-      # logged-out inside the container even though .credentials.json is
-      # present. Must be rw — the file is rewritten on every session.
-      - ${HOME}/.claude.json:/home/carthage/.claude.json:rw
       - ${HOME}/.gitconfig:/home/carthage/.gitconfig:ro
       # Per-project state directory — currently holds .bash_history so shell
       # history persists across `carthage down`/`up`. The CLI ensures this

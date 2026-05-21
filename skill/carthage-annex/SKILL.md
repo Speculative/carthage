@@ -1,7 +1,7 @@
 ---
 name: carthage-annex
 version: "1.2.0"
-description: Use when the user wants to bring a project into the Carthage sandboxed dev-environment workflow. Trigger phrases include "annex this project into carthage", "carthage-annex", "set up carthage for this repo", "make this project carthage-compatible", "bring this repo into carthage", and "/carthage-annex". Generates `.carthage/` config for a new or existing project so the user can run `carthage up && carthage attach` to get a sandboxed Claude Code session.
+description: Use when the user wants to bring a project into the Carthage sandboxed dev-environment workflow. Trigger phrases include "annex this project into carthage", "carthage-annex", "set up carthage for this repo", "make this project carthage-compatible", "bring this repo into carthage", and "/carthage-annex". Generates `.carthage/` config for a new or existing project so the user can run `carthage up && carthage attach` to get a sandboxed agent session.
 ---
 
 # /carthage-annex — bring a project into Carthage
@@ -9,7 +9,9 @@ description: Use when the user wants to bring a project into the Carthage sandbo
 You're helping the user set up Carthage for a project. The end state is:
 
 - `.carthage/config.toml`, `.carthage/Dockerfile`, `.carthage/docker-compose.yaml` committed in the repo.
-- `.claude/skills/carthage-env/SKILL.md` committed in the repo (so the in-container Claude session knows it's in a sandbox).
+- Agent-local `carthage-env` skills committed in the repo so the in-container agent knows it's in a sandbox:
+  - `.claude/skills/carthage-env/SKILL.md`
+  - `.agents/skills/carthage-env/SKILL.md`
 - `.dockerignore` at the project root (only if one doesn't already exist).
 - `.carthage/last-build-hash` entry appended to `.gitignore`.
 
@@ -157,13 +159,13 @@ Templates live alongside this skill at `templates/`. Render them with the values
   - `pids_limit: 1000`
   - `mem_limit: ${CARTHAGE_MEM_LIMIT:-0}`, `cpus: ${CARTHAGE_CPUS:-0}` — both resolved by the CLI at `up` time; 0 means unlimited.
   - `environment: { CARTHAGE: "1", CARTHAGE_PROJECT: "<slug>" }` — `CARTHAGE_PROJECT` is read by the in-container tmux status bar.
-  - Mounts: `..:/workspace`, `${HOME}/.claude:/home/carthage/.claude`, `${HOME}/.claude.json:/home/carthage/.claude.json` (rw — Claude Code login state lives here, sibling of `.claude/`), `${HOME}/.gitconfig:/home/carthage/.gitconfig:ro`, `${HOME}/.carthage/state/<slug>:/commandhistory:rw` (per-project shell-history dir; CLI creates the host side on `up`). Append any extra host mounts the user confirmed in step 3b (preserve their `:ro`/`:rw` mode and the exact host path — don't rewrite to relative paths).
+  - Mounts: `..:/workspace`, `${HOME}/.gitconfig:/home/carthage/.gitconfig:ro`, `${HOME}/.carthage/state/<slug>:/commandhistory:rw` (per-project shell-history dir; CLI creates the host side on `up`). Agent auth mounts are injected by `carthage up` from the user's personal agent config, not committed into the project compose file. Append any extra host mounts the user confirmed in step 3b (preserve their `:ro`/`:rw` mode and the exact host path — don't rewrite to relative paths).
   - `working_dir: /workspace`, `init: true`, `tty: true`, `stdin_open: true`
   - Labels: `carthage.managed=true`, `carthage.project=<slug>`, `carthage.role=dev`. Sidecars get `carthage.role=postgres` / `redis` / etc.
   - **No** `ports:` block unless the user opted into published ports in step 3.
   - Sibling services (`postgres`, `redis`, etc.) go in the same file on the same dedicated `carthage-net` network (reachable by service name from `dev`). These also get labels and **no** published ports.
 
-- **`.claude/skills/carthage-env/SKILL.md`** — from `carthage-env-SKILL.md.j2`. Pointer skill the in-container Claude instance discovers.
+- **`.claude/skills/carthage-env/SKILL.md`** and **`.agents/skills/carthage-env/SKILL.md`** — both from `carthage-env-SKILL.md.j2`. These are the project-local Carthage environment skills discovered by Claude and Codex respectively. Keep the content identical unless an agent-specific discovery rule requires a tiny frontmatter difference. Do not use `AGENTS.md` for Carthage unless the agent cannot discover project-local skills without it.
 
 - **`.dockerignore`** at the project root — from `dockerignore.j2`, only if one doesn't already exist.
 
@@ -175,7 +177,7 @@ Run `command -v carthage`. If missing, print:
 
 ```
 uv tool install git+https://github.com/speculative/carthage.git
-carthage fortify     # one-time host setup; installs this skill into ~/.claude/skills/
+carthage fortify     # one-time host setup; installs this skill under ~/.carthage/skills/ and links configured agents to it
 ```
 
 Do NOT install it yourself.
@@ -189,10 +191,10 @@ If the CLI is installed, run `carthage survey` (not `--deep` — that spins up a
 End with:
 
 > Next:
-> 1. Review the generated files under `.carthage/` and `.claude/skills/carthage-env/`.
-> 2. Commit them: `git add .carthage .claude/skills/carthage-env .dockerignore .gitignore && git commit -m "carthage: initial setup"`.
+> 1. Review the generated files under `.carthage/`, `.claude/skills/carthage-env/`, and `.agents/skills/carthage-env/`.
+> 2. Commit them: `git add .carthage .claude/skills/carthage-env .agents/skills/carthage-env .dockerignore .gitignore && git commit -m "carthage: initial setup"`.
 > 3. Run `carthage up` to build and start the container.
-> 4. Run `carthage attach` to drop into the tmux session with Claude Code running.
+> 4. Run `carthage attach` to drop into the tmux session with the configured agent running.
 
 ## What you do NOT do
 
