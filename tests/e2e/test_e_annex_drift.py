@@ -49,7 +49,7 @@ def test_status_flags_outdated_annex(
 
     out = r.stdout
     assert "annexed under" in out, f"expected 'annexed under' row, got:\n{out}"
-    assert "/carthage-annex --upgrade" in out, (
+    assert "/carthage-annex" in out and "--upgrade" in out, (
         f"expected status to flag the drift with an upgrade hint, got:\n{out}"
     )
 

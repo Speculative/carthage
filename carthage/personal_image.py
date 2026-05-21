@@ -11,10 +11,15 @@ from pathlib import Path
 
 from carthage import EXPECTED_BASE_IMAGE_TAG, PERSONAL_BASE_IMAGE_REPO, __version__
 from carthage.agents import agent_profiles_for
+from carthage import image
 from carthage.personal_config import PersonalConfig
 
 
 PERSONAL_IMAGE_HASH_LABEL = "org.carthage.personal-image-hash"
+
+
+class PersonalImageRequiredError(RuntimeError):
+    """Project Dockerfile does not inherit from the required personal image."""
 
 
 def personal_image_ref(tag: str = EXPECTED_BASE_IMAGE_TAG) -> str:
@@ -22,6 +27,23 @@ def personal_image_ref(tag: str = EXPECTED_BASE_IMAGE_TAG) -> str:
     # carthage-base-personal tag and clean up the generated repo afterward.
     repo = os.environ.get("CARTHAGE_PERSONAL_IMAGE_REPO", PERSONAL_BASE_IMAGE_REPO)
     return f"{repo}:{tag}"
+
+
+def require_project_personal_image(dockerfile: Path, tag: str) -> str:
+    expected = personal_image_ref(tag)
+    try:
+        from_ref = image.parse_base_image(dockerfile.read_text())
+    except OSError as exc:
+        raise PersonalImageRequiredError(f"could not read {dockerfile}: {exc}") from exc
+    if from_ref is None:
+        raise PersonalImageRequiredError(f"{dockerfile} has no FROM line")
+    if from_ref != expected:
+        raise PersonalImageRequiredError(
+            f"{dockerfile} uses {from_ref!r}, but Carthage 2.0 projects must "
+            f"use {expected!r}. Run /carthage-annex --upgrade or change the "
+            f"Dockerfile to `FROM {expected}`."
+        )
+    return from_ref
 
 
 def personal_image_hash(*, base_image: str, config: PersonalConfig) -> str:

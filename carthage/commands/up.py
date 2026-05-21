@@ -24,9 +24,11 @@ from carthage.agents import AgentConfigError, agent_profiles_for, require_agent_
 from carthage.config import CarthageConfig, ConfigError, load_config
 from carthage.personal_config import PersonalConfigResult, load_personal_config
 from carthage.personal_image import (
+    PersonalImageRequiredError,
     build_personal_image,
     personal_image_is_current,
     personal_image_ref,
+    require_project_personal_image,
 )
 from carthage.runtime import filter_disabled_overlay, merge_overlays, render_compose_overlay
 
@@ -92,6 +94,11 @@ def up(force_rebuild: bool, offline: bool, no_host_ports: bool, port_overrides: 
     except AgentConfigError as exc:
         console.print(f"[red]error:[/red] {exc}")
         sys.exit(2)
+    try:
+        require_project_personal_image(cfg.dockerfile, cfg.base_image_tag)
+    except PersonalImageRequiredError as exc:
+        console.print(f"[red]error:[/red] {exc}")
+        sys.exit(2)
 
     # --- Refresh base image so digest drift is visible to the hash check ---
     # `compute_expected_hash` reads the base image's digest from the local
@@ -110,44 +117,43 @@ def up(force_rebuild: bool, offline: bool, no_host_ports: bool, port_overrides: 
                 "using local cache. Run `carthage build --pull` once you're online."
             )
 
-    if _uses_personal_image(cfg):
-        personal_ref = personal_image_ref(cfg.base_image_tag)
-        current, current_detail = personal_image_is_current(
-            image_ref=personal_ref,
-            base_image=cfg.base_image,
-            config=personal.config,
-        )
-        if current:
-            console.print(f"[green]personal image current[/green] ({current_detail})")
+    personal_ref = personal_image_ref(cfg.base_image_tag)
+    current, current_detail = personal_image_is_current(
+        image_ref=personal_ref,
+        base_image=cfg.base_image,
+        config=personal.config,
+    )
+    if current:
+        console.print(f"[green]personal image current[/green] ({current_detail})")
+        ok = True
+        detail = current_detail
+    elif offline:
+        if image.local_image_exists(*personal_ref.rsplit(":", 1)):
+            console.print(
+                f"[yellow]warning:[/yellow] personal image {personal_ref} is "
+                f"{current_detail}; using local cache because --offline is set."
+            )
             ok = True
             detail = current_detail
-        elif offline:
-            if image.local_image_exists(*personal_ref.rsplit(":", 1)):
-                console.print(
-                    f"[yellow]warning:[/yellow] personal image {personal_ref} is "
-                    f"{current_detail}; using local cache because --offline is set."
-                )
-                ok = True
-                detail = current_detail
-            else:
-                ok = False
-                detail = (
-                    f"{personal_ref} is missing and --offline is set; "
-                    "run `carthage fortify` while online first"
-                )
         else:
-            console.print(f"[cyan]refreshing[/cyan] {personal_ref} ({current_detail})…")
-            ok, detail = build_personal_image(
-                base_image=cfg.base_image,
-                target_image=personal_ref,
-                config=personal.config,
+            ok = False
+            detail = (
+                f"{personal_ref} is missing and --offline is set; "
+                "run `carthage fortify` while online first"
             )
-        if not ok:
-            console.print(
-                f"[red]personal image build failed:[/red] {detail}. "
-                "Run `carthage fortify` after fixing personal config."
-            )
-            sys.exit(1)
+    else:
+        console.print(f"[cyan]refreshing[/cyan] {personal_ref} ({current_detail})…")
+        ok, detail = build_personal_image(
+            base_image=cfg.base_image,
+            target_image=personal_ref,
+            config=personal.config,
+        )
+    if not ok:
+        console.print(
+            f"[red]personal image build failed:[/red] {detail}. "
+            "Run `carthage fortify` after fixing personal config."
+        )
+        sys.exit(1)
 
     # --- Build (conditionally) ---
     expected_hash = image.compute_expected_hash(cfg)
@@ -224,14 +230,6 @@ def _parse_overrides(raw: tuple[str, ...]) -> list[tuple[int, int]]:
             )
             sys.exit(2)
     return out
-
-
-def _uses_personal_image(cfg: CarthageConfig) -> bool:
-    try:
-        from_ref = image.parse_base_image(cfg.dockerfile.read_text())
-    except OSError:
-        return False
-    return from_ref == personal_image_ref(cfg.base_image_tag)
 
 
 def _resolve_runtime_env(cfg: CarthageConfig, *, offline: bool = False) -> dict[str, str]:

@@ -1,11 +1,13 @@
 from carthage.personal_config import PersonalAgents, PersonalConfig, PersonalImage
 from carthage.personal_image import (
     PERSONAL_IMAGE_HASH_LABEL,
+    PersonalImageRequiredError,
     personal_image_is_current,
     personal_image_hash,
     personal_image_ref,
     read_personal_image_hash,
     render_personal_image_dockerfile,
+    require_project_personal_image,
 )
 
 
@@ -138,3 +140,23 @@ def test_read_personal_image_hash_handles_missing_image(monkeypatch):
     monkeypatch.setattr("carthage.personal_image.subprocess.run", fake_run)
 
     assert read_personal_image_hash("missing:v1") is None
+
+
+def test_require_project_personal_image_accepts_expected_from(tmp_path):
+    dockerfile = tmp_path / "Dockerfile"
+    dockerfile.write_text("FROM carthage-base-personal:v1\n")
+
+    assert require_project_personal_image(dockerfile, "v1") == "carthage-base-personal:v1"
+
+
+def test_require_project_personal_image_rejects_published_base(tmp_path):
+    dockerfile = tmp_path / "Dockerfile"
+    dockerfile.write_text("FROM ghcr.io/speculative/carthage-base:v1\n")
+
+    try:
+        require_project_personal_image(dockerfile, "v1")
+    except PersonalImageRequiredError as exc:
+        assert "carthage-base-personal:v1" in str(exc)
+        assert "/carthage-annex --upgrade" in str(exc)
+    else:
+        raise AssertionError("expected PersonalImageRequiredError")
