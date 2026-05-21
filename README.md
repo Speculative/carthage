@@ -48,7 +48,7 @@ carthage attach   # drops you into a tmux session with the configured agent runn
 | `carthage build` | Force a rebuild. Pass `--no-cache` to skip the layer cache. |
 | `carthage status` | Quick runtime state for the current project. |
 | `carthage status --all` | Table of every running Carthage container across projects (reads Docker labels; no registry file). |
-| `carthage survey` | Deep diagnostic: deps, skill version alignment, config schema, Dockerfile `FROM`. `--deep` currently probes Claude auth. |
+| `carthage survey` | Diagnostic: deps, skill version alignment, config schema, Dockerfile `FROM`, and configured agent auth directories. |
 | `carthage --version` | CLI version + installed skill versions + expected base image. |
 
 ## Security model
@@ -163,7 +163,7 @@ trust.
 
 ## Troubleshooting
 
-`carthage survey` first — it catches the common issues (Docker not running, GHCR unreachable, agent auth missing, skill version drift). `carthage survey --deep` currently probes Claude auth inside a test container.
+`carthage survey` first — it catches the common issues (Docker not running, GHCR unreachable, configured agent auth directories missing, skill version drift).
 
 - **"port collision" on `carthage up`** — another Carthage project has the host port. `carthage status --all` tells you who. Options: stop that project, use `carthage up --no-host-ports` for internal-only access, or pick a different host port with `--port H:C`.
 - **The agent says "not authenticated" inside the container** — run the agent's login flow on the host once. The configured agent auth mount shares auth with the sandbox.

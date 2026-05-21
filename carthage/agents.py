@@ -24,6 +24,8 @@ class AgentProfile:
     install_user: str = "root"
     update_command: str | None = None
     auth_mounts: tuple[RuntimeMount, ...] = ()
+    auth_check_path: str | None = None
+    auth_login_hint: str | None = None
     managed_skill_dir: str | None = None
 
     def runtime_overlay(
@@ -63,6 +65,8 @@ CLAUDE_PROFILE = AgentProfile(
             "rw",
         ),
     ),
+    auth_check_path="~/.claude",
+    auth_login_hint="Run `claude` on the host once to authenticate.",
     managed_skill_dir="~/.claude/skills",
 )
 
@@ -81,6 +85,8 @@ CODEX_PROFILE = AgentProfile(
     auth_mounts=(
         RuntimeMount("agent-codex-dir", "${HOME}/.codex", "/home/carthage/.codex", "rw"),
     ),
+    auth_check_path="~/.codex",
+    auth_login_hint="Run `codex --login` on the host first.",
     managed_skill_dir="~/.codex/skills",
 )
 

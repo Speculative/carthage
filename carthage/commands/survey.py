@@ -1,8 +1,8 @@
-"""`carthage survey` — deep diagnostic, including version-alignment checks.
+"""`carthage survey` — install diagnostic, including version-alignment checks.
 
 Split from `status`: status is for "is the current project running?"
 (fast, runs all the time), survey is for "is my install healthy?" (slow,
-runs occasionally — pulls images, may spin up test containers).
+runs occasionally — pulls images).
 
 Survey reports; it never fixes. The user runs `carthage fortify` if skills
 drift and edits project files themselves if config schemas or base image
@@ -19,7 +19,6 @@ Checks performed:
   - (if inside a project) annex templates match current template version
   - (if inside a project) base image major in Dockerfile still supported
   - (if inside a project, container running) base image version current
-  - (if --deep) spins up a test container, probes Claude auth
 """
 
 from __future__ import annotations
@@ -41,6 +40,7 @@ from carthage import (
     CURRENT_TEMPLATE_VERSION,
     EXPECTED_BASE_IMAGE_TAG,
     PERSONAL_BASE_IMAGE_REPO,
+    __version__,
     annex_template_is_outdated,
 )
 from carthage import image as carthage_image
@@ -107,11 +107,14 @@ def _check_readable_dir(path: Path, login_hint: str) -> tuple[bool, str]:
 
 
 def _agent_auth_dir(profile: AgentProfile) -> tuple[Path, str] | None:
-    if profile.kind == "claude":
-        return Path.home() / ".claude", "Run `claude` on the host once to authenticate."
-    if profile.kind == "codex":
-        return Path.home() / ".codex", "Run `codex --login` on the host first."
-    return None
+    if profile.auth_check_path is None:
+        return None
+    path = Path(profile.auth_check_path).expanduser()
+    hint = (
+        profile.auth_login_hint
+        or f"Run `{profile.binary}` on the host to authenticate."
+    )
+    return path, hint
 
 
 def check_agent_auth_dirs(personal: PersonalConfigResult) -> list[CheckResult]:
@@ -271,36 +274,14 @@ def check_dockerfile_base(cfg) -> tuple[bool, str]:
     return True, f"{from_ref} (non-standard; skipped check)"
 
 
-@_check("claude CLI auth (deep)")
-def check_claude_auth_deep(image_ref: str) -> tuple[bool, str]:
-    home = Path.home()
-    r = subprocess.run(
-        [
-            "docker", "run", "--rm",
-            "-v", f"{home}/.claude:/home/carthage/.claude",
-            "-e", "CARTHAGE=1",
-            image_ref,
-            "timeout", "30", "claude", "--print", "reply with exactly: OK",
-        ],
-        capture_output=True, text=True,
-    )
-    if r.returncode != 0:
-        tail = (r.stderr.strip() or r.stdout.strip()).splitlines()
-        return False, tail[-1][:300] if tail else f"exit {r.returncode}"
-    if not r.stdout.strip():
-        return False, "claude returned empty — likely not authenticated"
-    return True, f"claude responded ({len(r.stdout.strip())} chars)"
-
-
 def _default_base_image() -> str:
     return f"{BASE_IMAGE_REPO}:{EXPECTED_BASE_IMAGE_TAG}"
 
 
 @click.command()
-@click.option("--deep", is_flag=True, help="Pull the base image and probe Claude auth.")
 @click.option("--base-image", default=None, help="Override the base image ref.")
-def survey(deep: bool, base_image: str | None) -> None:
-    """Deep diagnostic: tool versions, skill alignment, (optional) live probes."""
+def survey(base_image: str | None) -> None:
+    """Diagnostic: tool versions, skill alignment, and image freshness."""
     # Try to pick up project config if we're inside one.
     cfg = None
     try:
@@ -333,12 +314,6 @@ def survey(deep: bool, base_image: str | None) -> None:
 
     if docker_up:
         results.append(check_base_image_pullable(base_image))
-        if deep and results[-1].ok:
-            results.append(check_claude_auth_deep(base_image))
-        elif deep:
-            console.print(
-                "[yellow]skipping deep claude-auth check — base image not available.[/yellow]"
-            )
 
     any_failed = False
     for r in results:
