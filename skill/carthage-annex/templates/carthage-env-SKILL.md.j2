@@ -10,8 +10,14 @@ If the `$CARTHAGE` environment variable is set, you are running inside a
 Carthage sandbox container. Read `/etc/carthage/SANDBOX.md` for the rules
 that apply to this environment — scoped mounts, no sudo, commit workflow,
 agent permission-bypass guidance, and how to request additional services or
-system packages. Note in particular that the host LAN is *not*
-firewalled off; the container can reach anything the host user can reach.
+system packages.
+
+Project source is mounted at `/workspace`. Agent auth/session state is
+mounted according to the user's personal Carthage agent config, not this
+project's compose file, so do not add agent-specific auth mounts to
+`.carthage/docker-compose.yaml`. Note in particular that the host LAN is
+*not* firewalled off; the container can reach anything the host user can
+reach.
 
 If `$CARTHAGE` is unset, this skill is a no-op. You are on the host, and
 the sandbox rules don't apply.

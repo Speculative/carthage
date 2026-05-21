@@ -2,7 +2,7 @@
 
 This changelog covers the *templates* this skill generates: `.carthage/Dockerfile`, `.carthage/docker-compose.yaml`, `.carthage/config.toml`, and the in-project `carthage-env` skill. CLI behavior changes that don't affect generated files are out of scope here — see the project root for those.
 
-`/carthage-annex --upgrade` reads this file and surfaces entries newer than the target project's `template_version`, so existing projects get the rationale and migration steps before any diff is applied. Projects that still have the legacy `annexed_with_cli` field should be treated as older than Template 1.
+`/carthage-annex --upgrade` reads this file and surfaces entries newer than the target project's `template_version`, so existing projects get the rationale and migration steps before any diff is applied. Projects that still have the legacy `annexed_with_cli` field should be treated as older than Template 1, while the historical entries below explain the pre-2.0 changes newer than their recorded CLI version.
 
 New entries use flat template versions. Historical entries before Carthage 2.0 used CLI semver because `annexed_with_cli` was the old template drift marker.
 
@@ -15,6 +15,8 @@ New entries use flat template versions. Historical entries before Carthage 2.0 u
   editing `.carthage/docker-compose.yaml`.
 - **Generated projects use Carthage-owned environment skills for each agent
   discovery path** instead of storing Carthage guidance in `AGENTS.md`.
+- **Generated config uses integer `schema_version` and `template_version`
+  fields** instead of overloading CLI semver as the project template marker.
 
 ### Migration for existing projects
 Remove Claude-specific auth mounts from `.carthage/docker-compose.yaml`:
