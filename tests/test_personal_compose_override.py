@@ -12,9 +12,9 @@ def _write_project(root: Path, extra: str = "") -> None:
     (carthage_dir / "config.toml").write_text(
         f"""
 [carthage]
-version = "1"
+schema_version = 1
+template_version = 1
 base_image_tag = "v1"
-annexed_with_cli = "1.2.0"
 service_name = "dev"
 project_slug = "demo"
 {extra}
@@ -27,7 +27,7 @@ def _write_personal(path: Path) -> None:
     path.write_text(
         """
 [carthage]
-personal_config_version = "1"
+schema_version = 1
 
 [[mounts]]
 id = "notes"
@@ -195,7 +195,7 @@ def test_installed_codex_agent_adds_auth_mount_and_launch_env(tmp_path):
     personal_path.write_text(
         """
 [carthage]
-personal_config_version = "1"
+schema_version = 1
 
 [agents]
 installed = ["claude", "codex"]
@@ -246,7 +246,7 @@ def test_codex_only_config_does_not_mount_claude_auth(tmp_path):
     personal_path.write_text(
         """
 [carthage]
-personal_config_version = "1"
+schema_version = 1
 
 [agents]
 installed = ["codex"]

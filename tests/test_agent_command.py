@@ -6,7 +6,7 @@ from carthage.commands.agent import _set_agents_table, agent
 def test_set_agents_table_creates_config():
     text = _set_agents_table("", installed=["claude"], default="claude")
 
-    assert '[carthage]\npersonal_config_version = "1"' in text
+    assert '[carthage]\nschema_version = 1' in text
     assert '[agents]\ninstalled = ["claude"]\ndefault = "claude"' in text
 
 
@@ -14,7 +14,7 @@ def test_set_agents_table_replaces_existing_agents_table():
     text = _set_agents_table(
         """
 [carthage]
-personal_config_version = "1"
+schema_version = 1
 
 [agents]
 installed = ["old"]
@@ -42,7 +42,7 @@ def test_agent_use_writes_personal_config(tmp_path):
     assert result.exit_code == 0
     assert (home / ".carthage" / "config.toml").read_text() == (
         "[carthage]\n"
-        "personal_config_version = \"1\"\n"
+        "schema_version = 1\n"
         "\n"
         "[agents]\n"
         "installed = [\"claude\"]\n"
@@ -71,7 +71,7 @@ def test_agent_use_accepts_codex(tmp_path):
     assert result.exit_code == 0
     assert (home / ".carthage" / "config.toml").read_text() == (
         "[carthage]\n"
-        "personal_config_version = \"1\"\n"
+        "schema_version = 1\n"
         "\n"
         "[agents]\n"
         "installed = [\"codex\"]\n"

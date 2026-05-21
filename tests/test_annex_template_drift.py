@@ -1,55 +1,67 @@
 """Unit tests for `annex_template_is_outdated`.
 
 Used by `up`/`status`/`survey` to nudge users to re-annex when the templates
-have likely changed underneath their project. Patch-only drift returns
-False by policy — patch releases don't ship template changes.
+have changed underneath their project.
 """
 
 from unittest.mock import patch
 
 from carthage import annex_template_is_outdated
+from carthage.commands.survey import check_annex_template_current
 
 
-def _at_version(v: str):
-    """Pin __version__ for the duration of a test."""
-    return patch("carthage.__version__", v)
+class _Cfg:
+    def __init__(self, template_version):
+        self.template_version = template_version
 
 
-def test_none_means_pre_1_0_treated_as_outdated():
-    with _at_version("1.1.0"):
+def _at_template_version(v: int):
+    """Pin CURRENT_TEMPLATE_VERSION for the duration of a test."""
+    return patch("carthage.CURRENT_TEMPLATE_VERSION", v)
+
+
+def _at_survey_template_version(v: int):
+    return patch("carthage.commands.survey.CURRENT_TEMPLATE_VERSION", v)
+
+
+def test_none_means_legacy_template_marker_is_outdated():
+    with _at_template_version(1):
         assert annex_template_is_outdated(None) is True
 
 
 def test_equal_versions_not_outdated():
-    with _at_version("1.1.0"):
-        assert annex_template_is_outdated("1.1.0") is False
+    with _at_template_version(1):
+        assert annex_template_is_outdated(1) is False
 
 
-def test_patch_drift_not_outdated():
-    # Policy: patch releases don't ship template changes, so 1.1.0 -> 1.1.5
-    # is fine; we don't nudge the user.
-    with _at_version("1.1.5"):
-        assert annex_template_is_outdated("1.1.0") is False
+def test_older_template_is_outdated():
+    with _at_template_version(3):
+        assert annex_template_is_outdated(2) is True
 
 
-def test_minor_drift_outdated():
-    with _at_version("1.2.0"):
-        assert annex_template_is_outdated("1.1.0") is True
+def test_newer_than_cli_template_not_outdated():
+    with _at_template_version(1):
+        assert annex_template_is_outdated(2) is False
 
 
-def test_major_drift_outdated():
-    with _at_version("2.0.0"):
-        assert annex_template_is_outdated("1.5.0") is True
+def test_survey_template_check_passes_for_current_template():
+    with _at_template_version(1):
+        result = check_annex_template_current(_Cfg(1))
+
+    assert result.ok is True
+    assert "matches current" in result.detail
 
 
-def test_newer_than_cli_not_outdated():
-    # A project annexed under a newer CLI than is currently installed isn't
-    # "outdated"; if anything the *CLI* is behind. Either way: no nudge.
-    with _at_version("1.0.0"):
-        assert annex_template_is_outdated("1.1.0") is False
+def test_survey_template_check_fails_for_legacy_template():
+    result = check_annex_template_current(_Cfg(None))
+
+    assert result.ok is False
+    assert "no `template_version` field" in result.detail
 
 
-def test_unparseable_version_not_outdated():
-    # Don't false-positive on garbage. Better to silently skip the check.
-    with _at_version("1.1.0"):
-        assert annex_template_is_outdated("not-a-version") is False
+def test_survey_template_check_fails_for_stale_template():
+    with _at_template_version(3), _at_survey_template_version(3):
+        result = check_annex_template_current(_Cfg(2))
+
+    assert result.ok is False
+    assert "template 2, current is 3" in result.detail

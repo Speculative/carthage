@@ -27,13 +27,13 @@ Real example (v1.0.1): a one-line fix to [skill/carthage-annex/templates/docker-
    - [carthage/__init__.py](carthage/__init__.py) `__version__`
    - [skill/carthage-annex/SKILL.md](skill/carthage-annex/SKILL.md) frontmatter `version`
 
-2. **Update the `annexed_with_cli` default** in [skill/carthage-annex/templates/carthage-config.toml.j2](skill/carthage-annex/templates/carthage-config.toml.j2) and [skill/carthage-annex/templates/carthage-env-SKILL.md.j2](skill/carthage-annex/templates/carthage-env-SKILL.md.j2) — both default to a version string when not overridden. Keep them in sync with the CLI version.
+2. **If generated project files changed, bump `CURRENT_TEMPLATE_VERSION`** in [carthage/__init__.py](carthage/__init__.py) and update the `template_version` defaults in [skill/carthage-annex/templates/carthage-config.toml.j2](skill/carthage-annex/templates/carthage-config.toml.j2) and [skill/carthage-annex/templates/carthage-env-SKILL.md.j2](skill/carthage-annex/templates/carthage-env-SKILL.md.j2). Template versions are flat integers and only change when annex-generated committed files should change.
 
-3. **Add a changelog entry for any template change** in [skill/carthage-annex/CHANGELOG.md](skill/carthage-annex/CHANGELOG.md). `/carthage-annex --upgrade` reads this file and surfaces entries newer than the project's `annexed_with_cli`, so the entry is the *only* place an existing-project user sees the rationale for a template diff. Include a "Migration for existing projects" subsection with the manual edits if `--upgrade` isn't run. A template change without a changelog entry is invisible to existing-project users and counts as a regression.
+3. **Add a changelog entry for any template change** in [skill/carthage-annex/CHANGELOG.md](skill/carthage-annex/CHANGELOG.md). `/carthage-annex --upgrade` reads this file and surfaces entries newer than the project's `template_version`, so the entry is the *only* place an existing-project user sees the rationale for a template diff. Include a "Migration for existing projects" subsection with the manual edits if `--upgrade` isn't run. A template change without a changelog entry is invisible to existing-project users and counts as a regression.
 
 4. **Don't update the doc-example versions** in [carthage/config.py](carthage/config.py) and [README.md](README.md) every release — they're illustrative. Update only when they'd actively mislead a reader.
 
-5. **Don't update the E2E fixture configs** ([tests/e2e/fixtures/*/.carthage/config.toml](tests/e2e/fixtures/)) — they represent projects annexed at a specific past CLI version. The `annexed_with_cli` field is informational and not runtime-checked.
+5. **Don't update the E2E fixture configs** ([tests/e2e/fixtures/*/.carthage/config.toml](tests/e2e/fixtures/)) unless the test scenario intentionally needs the new generated surface. They represent projects annexed at a specific past template version.
 
 6. **Commit, tag, push:**
    ```sh
@@ -63,13 +63,32 @@ Real example (v1.0.1): a one-line fix to [skill/carthage-annex/templates/docker-
 
 ## Versioning policy
 
-Standard semver, applied to the unified CLI/skills/base-image version:
+The CLI package, bundled personal skills, and base-image release use standard
+semver:
 
 - **Major (`X.0.0`)** — breaking changes: a config schema bump, a base-image change that requires per-project migration, or a CLI flag/command removed/renamed in a way an existing project relies on.
 - **Minor (`x.Y.0`)** — new features, additive: new CLI commands or flags, new tools or env defaults in the base image, new mounts in the compose template, new annex template fields. Anything users would notice as "I can do something I couldn't before."
 - **Patch (`x.y.Z`)** — bug fixes only: behavior was supposed to work and didn't; it now does. No new capability.
 
 When in doubt, prefer minor over patch — a too-low bump under-communicates change to users; the cost of a too-high bump is essentially zero.
+
+Other version surfaces are intentionally separate:
+
+- **Project config schema** — `schema_version` in `.carthage/config.toml`,
+  represented as a flat integer. Bump only when the project TOML schema
+  changes incompatibly.
+- **Personal config schema** — `schema_version` in
+  `~/.carthage/config.toml`, represented as a flat integer. Bump only when
+  the personal TOML schema changes incompatibly.
+- **Annex template bundle** — `template_version` in
+  `.carthage/config.toml`, represented as a flat integer. Bump whenever
+  generated committed project files should change: `.carthage/Dockerfile`,
+  `.carthage/docker-compose.yaml`, `.carthage/config.toml`,
+  `.dockerignore`, `.gitignore` managed entries, or project-local
+  `carthage-env` skills.
+- **Personal image freshness** — the
+  `org.carthage.personal-image-hash` Docker label is an opaque content hash,
+  not a user-facing version.
 
 ## Testing
 

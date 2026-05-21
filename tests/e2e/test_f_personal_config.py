@@ -114,7 +114,7 @@ def test_up_builds_isolated_personal_image_with_agent_only_personal_config(
     (carthage_home / "config.toml").write_text(
         """
 [carthage]
-personal_config_version = "1"
+schema_version = 1
 """
         + _agent_config_block()
     )
@@ -145,7 +145,7 @@ def test_personal_mount_and_environment_land_in_container(
     (carthage_home / "config.toml").write_text(
         """
 [carthage]
-personal_config_version = "1"
+schema_version = 1
 
 [[mounts]]
 id = "notes"
@@ -187,7 +187,7 @@ def test_project_opt_out_disables_personal_items(
     (carthage_home / "config.toml").write_text(
         """
 [carthage]
-personal_config_version = "1"
+schema_version = 1
 
 [[mounts]]
 id = "notes"
@@ -226,7 +226,7 @@ def test_personal_apt_packages_are_available_in_project_container(
     (carthage_home / "config.toml").write_text(
         """
 [carthage]
-personal_config_version = "1"
+schema_version = 1
 
 [image]
 apt_packages = ["shellcheck"]

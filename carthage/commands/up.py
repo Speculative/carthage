@@ -19,7 +19,7 @@ from pathlib import Path
 import click
 from rich.console import Console
 
-from carthage import __version__, annex_template_is_outdated, compose, image, ports
+from carthage import CURRENT_TEMPLATE_VERSION, annex_template_is_outdated, compose, image, ports
 from carthage.agents import AgentConfigError, agent_profiles_for, require_agent_profile
 from carthage.config import CarthageConfig, ConfigError, load_config
 from carthage.personal_config import PersonalConfigResult, load_personal_config
@@ -71,14 +71,19 @@ def up(force_rebuild: bool, offline: bool, no_host_ports: bool, port_overrides: 
 
     if cfg.schema_is_outdated:
         console.print(
-            f"[yellow]note:[/yellow] config schema '{cfg.version}' is older than "
+            f"[yellow]note:[/yellow] config schema {cfg.schema_version} is older than "
             "current. Still readable, but consider upgrading the project config."
         )
 
-    if annex_template_is_outdated(cfg.annexed_with_cli):
+    if annex_template_is_outdated(cfg.template_version):
+        project_template = (
+            str(cfg.template_version)
+            if cfg.template_version is not None
+            else f"legacy ({cfg.legacy_annexed_with_cli or 'unknown'})"
+        )
         console.print(
-            f"[yellow]note:[/yellow] this project was annexed under CLI "
-            f"{cfg.annexed_with_cli or 'pre-1.0'}; current CLI is {__version__}. "
+            f"[yellow]note:[/yellow] this project uses template "
+            f"{project_template}; current template is {CURRENT_TEMPLATE_VERSION}. "
             "Run /carthage-annex --upgrade from an agent session to pick up template "
             "improvements (mounts, labels, etc.)."
         )

@@ -90,9 +90,9 @@ The `.carthage/config.toml` schema (v1) looks like:
 
 ```toml
 [carthage]
-version          = "1"         # config schema version
-base_image_tag   = "v1"        # carthage-base major this project targets
-annexed_with_cli = "1.0.1"     # informational; what CLI did the annex
+schema_version   = 1       # project config TOML schema version
+template_version = 1       # annex template bundle version
+base_image_tag   = "v1"    # carthage-base major this project targets
 service_name     = "dev"
 project_slug     = "my-project"
 ```
@@ -103,7 +103,7 @@ There are several upgrade paths because the three artifacts (CLI, base image, in
 
 1. **CLI** — `uv tool upgrade carthage-cli`. Installs the new CLI binary on the host.
 2. **Skills** — `carthage fortify`. Re-installs `~/.carthage/skills/carthage-annex` from the new wheel and refreshes agent discovery links. Required after every CLI upgrade; not automatic.
-3. **Per-project templates** — in each annexed project, run `/carthage-annex --upgrade` from an agent session. The skill reads its bundled `CHANGELOG.md`, surfaces every entry newer than the project's `annexed_with_cli`, then proposes file-by-file diffs against your committed `.carthage/`. This is how an existing project picks up template changes (new mounts, new env vars, new hardening defaults). Without this step, your committed compose file stays frozen at whatever template was current when you originally annexed.
+3. **Per-project templates** — in each annexed project, run `/carthage-annex --upgrade` from an agent session. The skill reads its bundled `CHANGELOG.md`, surfaces every entry newer than the project's `template_version`, then proposes file-by-file diffs against your committed `.carthage/`. This is how an existing project picks up template changes (new mounts, new env vars, new hardening defaults). Without this step, your committed compose file stays frozen at whatever template was current when you originally annexed.
 4. **Base image, within a major** — `carthage build --pull` from the project root. The `:v1` tag on GHCR moves forward as we publish minor/patch base-image releases (e.g., new tooling, default config files); `--pull` refreshes that published base, rebuilds the local personal base when the project uses it, then rebuilds the project image. Without `--pull` you stay on whatever base digest is cached locally.
 5. **Base image, across majors** — edit the `FROM` line in `.carthage/Dockerfile` (the source of truth — `base_image_tag` in `.carthage/config.toml` is informational and should be updated as a courtesy), then `carthage build`. Projects normally move from `carthage-base-personal:v1` to the next personal major after `carthage fortify` supports it. Major bumps may require code or config changes; the `carthage-base` release notes will say.
 
@@ -118,7 +118,7 @@ Minimal file:
 
 ```toml
 [carthage]
-personal_config_version = "1"
+schema_version = 1
 ```
 
 Personal mounts and environment variables use stable IDs so individual projects
@@ -126,7 +126,7 @@ can opt out:
 
 ```toml
 [carthage]
-personal_config_version = "1"
+schema_version = 1
 
 [[mounts]]
 id = "notes"

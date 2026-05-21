@@ -1,5 +1,5 @@
 from carthage.personal_config import (
-    CURRENT_PERSONAL_CONFIG_SCHEMA,
+    CURRENT_PERSONAL_SCHEMA_VERSION,
     PersonalAgents,
     PersonalConfig,
     PersonalEnvironment,
@@ -14,7 +14,7 @@ def test_missing_personal_config_returns_defaults(tmp_path):
 
     result = load_personal_config(path)
 
-    assert result.config == PersonalConfig(version=CURRENT_PERSONAL_CONFIG_SCHEMA)
+    assert result.config == PersonalConfig(schema_version=CURRENT_PERSONAL_SCHEMA_VERSION)
     assert result.exists is False
     assert result.warnings == ()
     assert result.path == path
@@ -25,7 +25,7 @@ def test_personal_config_path_can_come_from_env(tmp_path, monkeypatch):
     path.write_text(
         """
 [carthage]
-personal_config_version = "1"
+schema_version = 1
 
 [agents]
 installed = ["codex"]
@@ -45,7 +45,7 @@ def test_valid_personal_config(tmp_path):
     path.write_text(
         """
 [carthage]
-personal_config_version = "1"
+schema_version = 1
 
 [[mounts]]
 id = "notes"
@@ -70,7 +70,7 @@ default = "claude"
     result = load_personal_config(path)
 
     assert result.config == PersonalConfig(
-        version="1",
+        schema_version=1,
         mounts=(
             PersonalMount(
                 id="notes",
@@ -102,7 +102,7 @@ def test_malformed_toml_warns_and_uses_defaults(tmp_path):
 
 def test_missing_carthage_table_warns_and_uses_defaults(tmp_path):
     path = tmp_path / "config.toml"
-    path.write_text('[other]\npersonal_config_version = "1"\n')
+    path.write_text('[other]\nschema_version = 1\n')
 
     result = load_personal_config(path)
 
@@ -119,22 +119,89 @@ def test_missing_version_warns_and_defaults_to_current(tmp_path):
 
     result = load_personal_config(path)
 
-    assert result.config == PersonalConfig(version=CURRENT_PERSONAL_CONFIG_SCHEMA)
+    assert result.config == PersonalConfig(schema_version=CURRENT_PERSONAL_SCHEMA_VERSION)
     assert result.exists is True
     assert len(result.warnings) == 1
-    assert "missing [carthage].personal_config_version" in result.warnings[0]
+    assert "missing [carthage].schema_version" in result.warnings[0]
 
 
-def test_newer_version_warns_and_uses_defaults(tmp_path):
+def test_legacy_personal_config_version_is_accepted(tmp_path):
     path = tmp_path / "config.toml"
-    path.write_text('[carthage]\npersonal_config_version = "999"\n')
+    path.write_text(
+        """
+[carthage]
+personal_config_version = "1"
+"""
+    )
+
+    result = load_personal_config(path)
+
+    assert result.config.schema_version == 1
+    assert result.warnings == ()
+
+
+def test_numeric_string_personal_schema_version_is_accepted(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text(
+        """
+[carthage]
+schema_version = "1"
+"""
+    )
+
+    result = load_personal_config(path)
+
+    assert result.config.schema_version == 1
+    assert result.warnings == ()
+
+
+def test_non_integer_personal_schema_version_is_ignored(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text(
+        """
+[carthage]
+schema_version = "v1"
+"""
+    )
 
     result = load_personal_config(path)
 
     assert result.config == PersonalConfig()
     assert result.exists is True
     assert result.warnings == (
-        f"{path}: personal_config_version '999' is newer than this CLI supports; "
+        f"{path}: [carthage].schema_version must be an integer; ignoring personal config",
+    )
+
+
+def test_older_personal_schema_version_is_ignored(tmp_path, monkeypatch):
+    path = tmp_path / "config.toml"
+    path.write_text(
+        """
+[carthage]
+schema_version = 1
+"""
+    )
+    monkeypatch.setattr("carthage.personal_config.MIN_READABLE_PERSONAL_SCHEMA_VERSION", 2)
+
+    result = load_personal_config(path)
+
+    assert result.config == PersonalConfig()
+    assert result.exists is True
+    assert result.warnings == (
+        f"{path}: schema_version 1 is older than this CLI can read; ignoring personal config",
+    )
+
+
+def test_newer_version_warns_and_uses_defaults(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text('[carthage]\nschema_version = 999\n')
+
+    result = load_personal_config(path)
+
+    assert result.config == PersonalConfig()
+    assert result.exists is True
+    assert result.warnings == (
+        f"{path}: schema_version 999 is newer than this CLI supports; "
         "ignoring personal config",
     )
 
@@ -144,7 +211,7 @@ def test_invalid_mount_and_environment_entries_are_skipped(tmp_path):
     path.write_text(
         """
 [carthage]
-personal_config_version = "1"
+schema_version = 1
 
 [[mounts]]
 id = "relative-source"
@@ -167,7 +234,7 @@ value = "x"
 
     result = load_personal_config(path)
 
-    assert result.config == PersonalConfig(version="1")
+    assert result.config == PersonalConfig(schema_version=1)
     assert len(result.warnings) == 3
     assert "source must be absolute" in result.warnings[0]
     assert "mode must be 'ro' or 'rw'" in result.warnings[1]
@@ -179,7 +246,7 @@ def test_invalid_image_packages_are_skipped(tmp_path):
     path.write_text(
         """
 [carthage]
-personal_config_version = "1"
+schema_version = 1
 
 [image]
 apt_packages = ["ok-package", "bad/package", "ok-package"]
@@ -199,7 +266,7 @@ def test_legacy_agent_kind_is_accepted(tmp_path):
     path.write_text(
         """
 [carthage]
-personal_config_version = "1"
+schema_version = 1
 
 [agent]
 kind = "claude"
@@ -217,7 +284,7 @@ def test_unknown_agents_are_skipped(tmp_path):
     path.write_text(
         """
 [carthage]
-personal_config_version = "1"
+schema_version = 1
 
 [agents]
 installed = ["gemini", "claude", "claude"]
@@ -239,7 +306,7 @@ def test_agents_without_default_do_not_pick_one_implicitly(tmp_path):
     path.write_text(
         """
 [carthage]
-personal_config_version = "1"
+schema_version = 1
 
 [agents]
 installed = ["codex"]
@@ -258,7 +325,7 @@ def test_codex_agent_config_is_accepted(tmp_path):
     path.write_text(
         """
 [carthage]
-personal_config_version = "1"
+schema_version = 1
 
 [agents]
 installed = ["claude", "codex"]

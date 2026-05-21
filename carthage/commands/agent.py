@@ -79,7 +79,7 @@ def _set_agents_table(text: str, *, installed: list[str], default: str) -> str:
     if not text.strip():
         return (
             "[carthage]\n"
-            "personal_config_version = \"1\"\n"
+            "schema_version = 1\n"
             "\n"
             f"{block}"
         )

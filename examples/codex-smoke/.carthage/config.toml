@@ -1,7 +1,6 @@
 [carthage]
-version = "1"
+schema_version = 1
+template_version = 1
 base_image_tag = "v1"
-annexed_with_cli = "2.0.0-dev"
 service_name = "dev"
 project_slug = "example-codex-smoke"
-

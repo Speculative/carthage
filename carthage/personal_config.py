@@ -22,8 +22,8 @@ from carthage.agents import supported_agent_kinds
 from carthage.runtime import RuntimeEnv, RuntimeMount, RuntimeOverlay
 
 
-CURRENT_PERSONAL_CONFIG_SCHEMA = "1"
-MIN_READABLE_PERSONAL_CONFIG_SCHEMA = "1"
+CURRENT_PERSONAL_SCHEMA_VERSION = 1
+MIN_READABLE_PERSONAL_SCHEMA_VERSION = 1
 PERSONAL_CONFIG_ENV = "CARTHAGE_PERSONAL_CONFIG"
 RESERVED_ENVIRONMENT_NAMES = frozenset({
     "CARTHAGE",
@@ -54,7 +54,7 @@ class PersonalAgents:
 
 @dataclass(frozen=True)
 class PersonalConfig:
-    version: str = CURRENT_PERSONAL_CONFIG_SCHEMA
+    schema_version: int = CURRENT_PERSONAL_SCHEMA_VERSION
     mounts: tuple[PersonalMount, ...] = ()
     environment: tuple[PersonalEnvironment, ...] = ()
     image: PersonalImage = field(default_factory=PersonalImage)
@@ -114,31 +114,41 @@ def load_personal_config(path: Path | None = None) -> PersonalConfigResult:
             True,
         )
 
-    raw_version = table.get("personal_config_version")
+    raw_version = table.get("schema_version", table.get("personal_config_version"))
     if raw_version is None:
         warnings.append(
-            f"{config_path}: missing [carthage].personal_config_version; "
-            f"defaulting to '{CURRENT_PERSONAL_CONFIG_SCHEMA}'"
+            f"{config_path}: missing [carthage].schema_version; "
+            f"defaulting to {CURRENT_PERSONAL_SCHEMA_VERSION}"
         )
-        version = CURRENT_PERSONAL_CONFIG_SCHEMA
+        schema_version = CURRENT_PERSONAL_SCHEMA_VERSION
     else:
-        version = str(raw_version)
+        schema_version = _coerce_version_int(raw_version)
+        if schema_version is None:
+            return PersonalConfigResult(
+                default,
+                (
+                    f"{config_path}: [carthage].schema_version must be an integer; "
+                    "ignoring personal config",
+                ),
+                config_path,
+                True,
+            )
 
-    if version < MIN_READABLE_PERSONAL_CONFIG_SCHEMA:
+    if schema_version < MIN_READABLE_PERSONAL_SCHEMA_VERSION:
         return PersonalConfigResult(
             default,
             (
-                f"{config_path}: personal_config_version '{version}' is older "
+                f"{config_path}: schema_version {schema_version} is older "
                 f"than this CLI can read; ignoring personal config",
             ),
             config_path,
             True,
         )
-    if version > CURRENT_PERSONAL_CONFIG_SCHEMA:
+    if schema_version > CURRENT_PERSONAL_SCHEMA_VERSION:
         return PersonalConfigResult(
             default,
             (
-                f"{config_path}: personal_config_version '{version}' is newer "
+                f"{config_path}: schema_version {schema_version} is newer "
                 f"than this CLI supports; ignoring personal config",
             ),
             config_path,
@@ -160,7 +170,7 @@ def load_personal_config(path: Path | None = None) -> PersonalConfigResult:
 
     return PersonalConfigResult(
         PersonalConfig(
-            version=version,
+            schema_version=schema_version,
             mounts=mounts,
             environment=environment,
             image=image_config,
@@ -189,7 +199,7 @@ def describe_personal_config(result: PersonalConfigResult) -> str:
             f"{len(result.config.agents.installed)} installed"
         )
     suffix = f" ({', '.join(counts)})" if counts else ""
-    base = f"{result.path} schema '{result.config.version}'{suffix}"
+    base = f"{result.path} schema {result.config.schema_version}{suffix}"
     if result.warnings:
         return base + "; " + "; ".join(result.warnings)
     return base
@@ -302,6 +312,14 @@ def _string_field(table: dict, key: str) -> str | None:
     if not isinstance(value, str) or value == "":
         return None
     return value
+
+
+def _coerce_version_int(value: object) -> int | None:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.isdecimal():
+        return int(value)
+    return None
 
 
 def _parse_image(raw: object, config_path: Path) -> tuple[PersonalImage, list[str]]:

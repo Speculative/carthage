@@ -1,12 +1,12 @@
-# Changelog — carthage-annex skill
+# Changelog — carthage-annex templates
 
 This changelog covers the *templates* this skill generates: `.carthage/Dockerfile`, `.carthage/docker-compose.yaml`, `.carthage/config.toml`, and the in-project `carthage-env` skill. CLI behavior changes that don't affect generated files are out of scope here — see the project root for those.
 
-`/carthage-annex --upgrade` reads this file and surfaces entries newer than the target project's `annexed_with_cli`, so existing projects get the rationale and migration steps before any diff is applied.
+`/carthage-annex --upgrade` reads this file and surfaces entries newer than the target project's `template_version`, so existing projects get the rationale and migration steps before any diff is applied. Projects that still have the legacy `annexed_with_cli` field should be treated as older than Template 1.
 
-The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions match the CLI/skill semver.
+New entries use flat template versions. Historical entries before Carthage 2.0 used CLI semver because `annexed_with_cli` was the old template drift marker.
 
-## [2.0.0] — 2026-05-20
+## Template 1 — 2026-05-21
 
 ### Changed
 - **Agent auth mounts are no longer committed in project compose files.**
@@ -28,6 +28,17 @@ Then add or refresh the project-local `carthage-env` skill generated from the
 current template under the agent discovery paths you want the project to
 support, such as `.claude/skills/carthage-env/SKILL.md` and
 `.agents/skills/carthage-env/SKILL.md`.
+
+Update `.carthage/config.toml` to the new versioning fields:
+
+```toml
+schema_version = 1
+template_version = 1
+```
+
+Remove the legacy `version` and `annexed_with_cli` fields after the upgrade.
+
+## Historical CLI-Versioned Entries
 
 ## [1.3.0] — 2026-05-19
 

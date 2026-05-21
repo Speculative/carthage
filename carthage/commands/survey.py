@@ -16,7 +16,7 @@ Checks performed:
   - installed skill versions match the CLI version
   - (if inside a project) base image pullable
   - (if inside a project) config schema is readable by this CLI
-  - (if inside a project) annex templates match current CLI version
+  - (if inside a project) annex templates match current template version
   - (if inside a project) base image major in Dockerfile still supported
   - (if inside a project, container running) base image version current
   - (if --deep) spins up a test container, probes Claude auth
@@ -37,10 +37,10 @@ from rich.console import Console
 
 from carthage import (
     BASE_IMAGE_REPO,
-    CURRENT_CONFIG_SCHEMA,
+    CURRENT_PROJECT_SCHEMA_VERSION,
+    CURRENT_TEMPLATE_VERSION,
     EXPECTED_BASE_IMAGE_TAG,
     PERSONAL_BASE_IMAGE_REPO,
-    __version__,
     annex_template_is_outdated,
 )
 from carthage import image as carthage_image
@@ -189,30 +189,26 @@ def check_base_image_pullable(image_ref: str) -> tuple[bool, str]:
 def check_config_schema(cfg) -> tuple[bool, str]:
     if cfg.schema_is_outdated:
         return True, (
-            f"schema '{cfg.version}' is older than current '{CURRENT_CONFIG_SCHEMA}' "
-            "but still readable."
+            f"schema {cfg.schema_version} is older than current "
+            f"{CURRENT_PROJECT_SCHEMA_VERSION} but still readable."
         )
-    return True, f"schema '{cfg.version}' (current)"
+    return True, f"schema {cfg.schema_version} (current)"
 
 
 @_check("project annex templates are up to date")
 def check_annex_template_current(cfg) -> tuple[bool, str]:
-    """Compare the project's `annexed_with_cli` against the running CLI's
-    own version. Older-by-minor-or-major means the annex skill's templates
-    have likely changed underneath this project; user should re-annex to
-    pick up the diff. Patch-only drift returns OK by policy (CONTRIBUTING
-    "Versioning policy" — patch releases don't ship template changes)."""
-    if cfg.annexed_with_cli is None:
+    """Compare the project's template version with the bundled templates."""
+    if cfg.template_version is None:
         return False, (
-            f"no `annexed_with_cli` field — pre-1.0 config; CLI is {__version__}. "
+            "no `template_version` field — legacy annex config. "
             "Run /carthage-annex --upgrade."
         )
-    if annex_template_is_outdated(cfg.annexed_with_cli):
+    if annex_template_is_outdated(cfg.template_version):
         return False, (
-            f"annexed under CLI {cfg.annexed_with_cli}, current is {__version__}. "
+            f"template {cfg.template_version}, current is {CURRENT_TEMPLATE_VERSION}. "
             "Run /carthage-annex --upgrade to pick up template improvements."
         )
-    return True, f"annexed under CLI {cfg.annexed_with_cli} (matches current)"
+    return True, f"template {cfg.template_version} (matches current)"
 
 
 @_check("running container's base image is current")
