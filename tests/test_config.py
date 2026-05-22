@@ -15,7 +15,7 @@ def _write_project_config(root: Path, extra: str = "") -> None:
 [carthage]
 schema_version = 1
 template_version = 1
-base_image_tag = "v1"
+base_image_tag = "v2"
 service_name = "dev"
 project_slug = "demo"
 {extra}
@@ -41,7 +41,7 @@ def test_legacy_project_version_fields_are_loaded(tmp_path):
         """
 [carthage]
 version = "1"
-base_image_tag = "v1"
+base_image_tag = "v2"
 annexed_with_cli = "1.2.0"
 service_name = "dev"
 project_slug = "demo"
@@ -63,7 +63,7 @@ def test_numeric_string_project_versions_are_accepted(tmp_path):
 [carthage]
 schema_version = "1"
 template_version = "1"
-base_image_tag = "v1"
+base_image_tag = "v2"
 service_name = "dev"
 project_slug = "demo"
 """
@@ -82,7 +82,7 @@ def test_project_schema_version_is_required(tmp_path):
         """
 [carthage]
 template_version = 1
-base_image_tag = "v1"
+base_image_tag = "v2"
 service_name = "dev"
 project_slug = "demo"
 """
@@ -100,7 +100,7 @@ def test_project_schema_version_must_be_integer(tmp_path):
 [carthage]
 schema_version = "v1"
 template_version = 1
-base_image_tag = "v1"
+base_image_tag = "v2"
 service_name = "dev"
 project_slug = "demo"
 """
@@ -118,7 +118,7 @@ def test_project_template_version_must_be_integer(tmp_path):
 [carthage]
 schema_version = 1
 template_version = "v1"
-base_image_tag = "v1"
+base_image_tag = "v2"
 service_name = "dev"
 project_slug = "demo"
 """
@@ -136,7 +136,7 @@ def test_newer_project_schema_requires_newer_cli(tmp_path):
 [carthage]
 schema_version = 2
 template_version = 1
-base_image_tag = "v1"
+base_image_tag = "v2"
 service_name = "dev"
 project_slug = "demo"
 """
@@ -154,7 +154,7 @@ def test_older_unreadable_project_schema_is_rejected(tmp_path):
 [carthage]
 schema_version = 1
 template_version = 1
-base_image_tag = "v1"
+base_image_tag = "v2"
 service_name = "dev"
 project_slug = "demo"
 """

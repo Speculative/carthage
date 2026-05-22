@@ -65,6 +65,13 @@ def test_up_attach_and_host_reachable(
     assert r.returncode == 0
     assert "claude" in r.stdout.splitlines()
 
+    r = subprocess.run(
+        ["docker", "exec", container_id, "sh", "-lc", "command -v claude"],
+        capture_output=True,
+        text=True,
+    )
+    assert r.returncode == 0, f"personal Claude install missing: {r.stderr}"
+
     # Start the python server inside the container in the background.
     subprocess.run(
         ["docker", "exec", "-d", container_id,

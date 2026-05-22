@@ -97,7 +97,7 @@ def project_dir(tmp_path: Path, request) -> Path:
         lines = text.splitlines()
         for index, line in enumerate(lines):
             if line.startswith("FROM "):
-                lines[index] = f"FROM {E2E_PERSONAL_BASE_REPO}:v1"
+                lines[index] = f"FROM {E2E_PERSONAL_BASE_REPO}:v2"
                 break
         dockerfile.write_text("\n".join(lines) + "\n")
     return dest

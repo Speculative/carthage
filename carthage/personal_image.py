@@ -54,6 +54,7 @@ def personal_image_hash(*, base_image: str, config: PersonalConfig) -> str:
         "agents": [
             {
                 "kind": profile.kind,
+                "root_install_commands": profile.root_install_commands,
                 "install_commands": profile.install_commands,
                 "install_user": profile.install_user,
             }
@@ -104,12 +105,14 @@ def render_personal_image_dockerfile(base_image: str, config: PersonalConfig) ->
         lines.append(" && rm -rf /var/lib/apt/lists/*")
 
     for profile in agent_profiles_for(config.agents.installed):
-        if not profile.install_commands:
+        if not profile.root_install_commands and not profile.install_commands:
             continue
         lines.extend([
             "",
             f"# Agent: {profile.kind}",
         ])
+        for command in profile.root_install_commands:
+            lines.append(f"RUN {command}")
         if profile.install_user != "root":
             lines.append(f"USER {profile.install_user}")
         for command in profile.install_commands:

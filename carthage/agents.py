@@ -22,8 +22,10 @@ class AgentProfile:
     launch_command: str
     tmux_window: str
     install_user: str = "root"
+    root_install_commands: tuple[str, ...] = ()
     update_command: str | None = None
     auth_mounts: tuple[RuntimeMount, ...] = ()
+    launch_environment: tuple[RuntimeEnv, ...] = ()
     auth_check_path: str | None = None
     auth_login_hint: str | None = None
     managed_skill_dir: str | None = None
@@ -43,6 +45,7 @@ class AgentProfile:
                 RuntimeEnv("agent-window", "CARTHAGE_AGENT_WINDOW", self.tmux_window),
                 RuntimeEnv("tmux-session", "CARTHAGE_TMUX_SESSION", DEFAULT_TMUX_SESSION),
                 RuntimeEnv("agent-update-command", "CARTHAGE_AGENT_UPDATE_COMMAND", self.update_command or ""),
+                *self.launch_environment,
             )
         return RuntimeOverlay(
             mounts=self.auth_mounts if include_mounts else (),
@@ -53,9 +56,13 @@ class AgentProfile:
 CLAUDE_PROFILE = AgentProfile(
     kind="claude",
     binary="claude",
-    install_commands=(),
+    install_commands=(
+        "curl -fsSL https://claude.ai/install.sh | bash",
+        "claude --version",
+    ),
     launch_command="claude --dangerously-skip-permissions",
     tmux_window="claude",
+    install_user="carthage",
     auth_mounts=(
         RuntimeMount("agent-claude-dir", "${HOME}/.claude", "/home/carthage/.claude", "rw"),
         RuntimeMount(
@@ -65,6 +72,9 @@ CLAUDE_PROFILE = AgentProfile(
             "rw",
         ),
     ),
+    launch_environment=(
+        RuntimeEnv("agent-claude-no-flicker", "CLAUDE_CODE_NO_FLICKER", "1"),
+    ),
     auth_check_path="~/.claude",
     auth_login_hint="Run `claude` on the host once to authenticate.",
     managed_skill_dir="~/.claude/skills",
@@ -73,6 +83,13 @@ CLAUDE_PROFILE = AgentProfile(
 CODEX_PROFILE = AgentProfile(
     kind="codex",
     binary="codex",
+    root_install_commands=(
+        "curl -fsSL https://deb.nodesource.com/setup_20.x | bash -",
+        "apt-get install -y --no-install-recommends nodejs",
+        "rm -rf /var/lib/apt/lists/*",
+        "node --version",
+        "npm --version",
+    ),
     install_commands=(
         "npm config set prefix /home/carthage/.local",
         "npm install -g @openai/codex",

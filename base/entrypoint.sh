@@ -12,16 +12,9 @@ set -euo pipefail
 
 log() { printf '[carthage-entrypoint] %s\n' "$*" >&2; }
 
-# Ensure ~/.claude exists. On typical invocations the host bind-mount provides
-# this; if the image is run without the mount, we still want Claude Code to
-# have a writable config dir.
-if [ ! -d "${HOME:-/home/carthage}/.claude" ]; then
-    mkdir -p "${HOME:-/home/carthage}/.claude"
-fi
-
 tmux_session="${CARTHAGE_TMUX_SESSION:-carthage-session}"
-agent_window="${CARTHAGE_AGENT_WINDOW:-claude}"
-agent_command="${CARTHAGE_AGENT_COMMAND:-claude --dangerously-skip-permissions}"
+agent_window="${CARTHAGE_AGENT_WINDOW:-shell}"
+agent_command="${CARTHAGE_AGENT_COMMAND:-bash -l}"
 agent_update_command="${CARTHAGE_AGENT_UPDATE_COMMAND:-}"
 tmux_agent_command="bash -lc '${agent_command}; exec bash -l'"
 

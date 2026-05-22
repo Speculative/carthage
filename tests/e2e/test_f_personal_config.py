@@ -44,7 +44,7 @@ default = "claude"
 
 
 def _use_personal_image(project_dir: Path, personal_repo: str) -> str:
-    image_ref = f"{personal_repo}:v1"
+    image_ref = f"{personal_repo}:v2"
     dockerfile = project_dir / ".carthage" / "Dockerfile"
     text = dockerfile.read_text()
     lines = text.splitlines()

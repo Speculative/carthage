@@ -5,7 +5,7 @@ Schema shape (v1):
     [carthage]
     schema_version   = 1        # config TOML schema version
     template_version = 1        # annex template bundle version
-    base_image_tag   = "v1"     # which carthage-base MAJOR the project targets
+    base_image_tag   = "v2"     # which carthage-base MAJOR the project targets
     service_name     = "dev"
     project_slug     = "my-project"
 
@@ -36,6 +36,7 @@ else:  # pragma: no cover — fallback for 3.10
 from carthage import (
     BASE_IMAGE_REPO,
     CURRENT_PROJECT_SCHEMA_VERSION,
+    EXPECTED_BASE_IMAGE_TAG,
     MIN_READABLE_PROJECT_SCHEMA_VERSION,
 )
 
@@ -54,7 +55,7 @@ class CarthageConfig:
     schema_version: int           # schema version
     template_version: int | None  # None for legacy annexed_with_cli projects
     legacy_annexed_with_cli: str | None
-    base_image_tag: str           # e.g. "v1"
+    base_image_tag: str           # e.g. "v2"
     service_name: str
     project_slug: str
     schema_is_outdated: bool      # True if schema < CURRENT but within compat window
@@ -168,9 +169,9 @@ def load_config(project_root: Path | None = None) -> CarthageConfig:
             "Use lowercase letters, digits, '.', '_', or '-' (starting with alnum)."
         )
 
-    # base_image_tag: accept v1 schema files that pre-date this field and fall
+    # base_image_tag: accept schema files that pre-date this field and fall
     # back to the schema default. In practice the annex skill always writes it.
-    base_image_tag = str(table.get("base_image_tag", "v1"))
+    base_image_tag = str(table.get("base_image_tag", EXPECTED_BASE_IMAGE_TAG))
 
     template_version = _parse_optional_version_int(
         table.get("template_version"),

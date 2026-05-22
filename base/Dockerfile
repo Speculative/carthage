@@ -5,9 +5,7 @@
 # What lives here:
 #   - git, tmux, curl, openssh-client, jq, ripgrep, ca-certificates
 #   - Python 3.12 + uv
-#   - Node.js LTS (kept on PATH for projects that FROM this image; Claude Code
-#     itself no longer needs it — see Claude install step below)
-#   - Claude Code CLI (native installer — auto-updates in the background)
+#   - Node.js LTS (kept on PATH for projects that FROM this image)
 #   - /etc/carthage/SANDBOX.md (sandbox-awareness document)
 #   - a non-root `carthage` user whose UID/GID match the host
 #
@@ -16,6 +14,8 @@
 #     those belong in each project's `.carthage/Dockerfile` which FROMs this image.
 #   - docker/podman CLI or the docker socket — the container never needs to run containers.
 #   - passwordless sudo — system packages are Dockerfile-time, not runtime.
+#   - agent CLIs — `carthage fortify` installs configured agents in the local
+#     personal image layer.
 #   - An in-container host-LAN firewall. Carthage does NOT isolate the container
 #     from the host's LAN; see README "Security model" for what we do and do not
 #     defend against.
@@ -24,7 +24,6 @@ FROM ubuntu:24.04
 
 ARG HOST_UID=1000
 ARG HOST_GID=1000
-ARG NODE_MAJOR=20
 
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
@@ -33,8 +32,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PATH=/home/carthage/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     PAGER=less \
     EDITOR=vim \
-    VISUAL=vim \
-    CLAUDE_CODE_NO_FLICKER=1
+    VISUAL=vim
 
 # --- System packages --------------------------------------------------------
 # passwd gives us groupadd/useradd. libcap2-bin gives us `capsh` which the
@@ -100,16 +98,6 @@ if [[ $- == *i* ]] && [ -f /usr/share/doc/fzf/examples/key-bindings.bash ]; then
 fi
 EOF
 
-# --- Node.js LTS -----------------------------------------------------------
-# Claude Code itself no longer needs Node — we install via the native
-# installer below. Node is retained for projects that FROM this image
-# expecting it (removing it would be a breaking change; defer to v2.0).
-RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - \
- && apt-get install -y --no-install-recommends nodejs \
- && rm -rf /var/lib/apt/lists/* \
- && node --version \
- && npm --version
-
 # --- uv (system-wide; users get it on PATH via /usr/local/bin) -------------
 RUN curl -LsSf https://astral.sh/uv/install.sh | \
       env UV_INSTALL_DIR=/usr/local/bin sh \
@@ -118,8 +106,6 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | \
 # --- Non-root user matching host UID/GID -----------------------------------
 # On Ubuntu 24.04 the default `ubuntu` user already claims UID 1000. If the
 # host's UID/GID is 1000 we rename/repurpose it; otherwise we create fresh.
-# Created BEFORE the Claude install below because the native installer
-# writes to $HOME/.local and must run as the target user.
 RUN set -eux; \
     if getent passwd "${HOST_UID}" >/dev/null; then \
         existing_user=$(getent passwd "${HOST_UID}" | cut -d: -f1); \
@@ -136,19 +122,6 @@ RUN set -eux; \
     groupadd --gid "${HOST_GID}" carthage; \
     useradd --uid "${HOST_UID}" --gid "${HOST_GID}" \
             --shell /bin/bash --create-home carthage
-
-# --- Claude Code CLI (native installer) ------------------------------------
-# We use the native installer (not `npm i -g`) so the in-container CLI can
-# self-update in the background. The installer writes the launcher to
-# ~/.local/bin/claude and versioned binaries to ~/.local/share/claude/, both
-# user-owned and writable — so when Claude Code's background updater runs
-# inside the container, it has permission to swap in a new version. The npm
-# package does not auto-update; the native installer does. The install MUST
-# run as the carthage user so the files land under that user's $HOME.
-USER carthage
-RUN curl -fsSL https://claude.ai/install.sh | bash \
- && claude --version
-USER root
 
 # --- Persistent shell-history mount point ---------------------------------
 # The CLI bind-mounts ~/.carthage/state/<slug>/ on the host onto this path.

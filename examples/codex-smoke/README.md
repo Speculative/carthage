@@ -1,7 +1,7 @@
 # Codex Smoke Project
 
 This is a minimal Carthage project for manually exercising the Codex profile.
-It uses `carthage-base-personal:v1`, so `carthage fortify` must build the
+It uses `carthage-base-personal:v2`, so `carthage fortify` must build the
 personal image before `carthage up`.
 
 From this directory:

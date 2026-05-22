@@ -1,6 +1,6 @@
 ---
 name: carthage-annex
-version: "1.2.0"
+version: "2.0.0"
 description: Use when the user wants to bring a project into the Carthage sandboxed dev-environment workflow. Trigger phrases include "annex this project into carthage", "carthage-annex", "set up carthage for this repo", "make this project carthage-compatible", "bring this repo into carthage", and "/carthage-annex". Generates `.carthage/` config for a new or existing project so the user can run `carthage up && carthage attach` to get a sandboxed agent session.
 ---
 
@@ -153,11 +153,11 @@ Templates live alongside this skill at `templates/`. Render them with the values
 - **`.carthage/config.toml`** — from `carthage-config.toml.j2`. Fields:
   - `schema_version = 1` (project config TOML schema version)
   - `template_version = 1` (annex template bundle version)
-  - `base_image_tag = "v1"` (the `carthage-base` major to target)
+  - `base_image_tag = "v2"` (the `carthage-base` major to target)
   - `service_name = "dev"`
   - `project_slug` — derive from project directory name, lowercase, replace non-alnum with `-`.
 
-- **`.carthage/Dockerfile`** — from `Dockerfile.j2`. `FROM carthage-base-personal:v1`; the user builds this local base with `carthage fortify`. Add `RUN` layers for detected runtimes. For Python, prefer installing pyenv only if the project pins a non-system version (`.python-version` file or `requires-python = ">=3.X"` constraint); otherwise the base image's Python 3.12 is fine. For Node, install nvm only if `.nvmrc` pins a version different from the base image's LTS.
+- **`.carthage/Dockerfile`** — from `Dockerfile.j2`. `FROM carthage-base-personal:v2`; the user builds this local base with `carthage fortify`. Add `RUN` layers for detected runtimes. For Python, prefer installing pyenv only if the project pins a non-system version (`.python-version` file or `requires-python = ">=3.X"` constraint); otherwise the base image's Python 3.12 is fine. For Node, install nvm only if `.nvmrc` pins a version different from the base image's LTS.
 
 - **`.carthage/docker-compose.yaml`** — from `docker-compose.yaml.j2`. One service named `dev` with:
   - `build.context: ..` (project root)

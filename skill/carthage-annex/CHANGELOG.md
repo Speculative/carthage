@@ -17,6 +17,9 @@ New entries use flat template versions. Historical entries before Carthage 2.0 u
   discovery path** instead of storing Carthage guidance in `AGENTS.md`.
 - **Generated config uses integer `schema_version` and `template_version`
   fields** instead of overloading CLI semver as the project template marker.
+- **Generated project Dockerfiles now inherit from `carthage-base-personal:v2`.**
+  Carthage 2.0 uses a neutral published base image and installs configured
+  agent CLIs in the local personal image layer.
 
 ### Migration for existing projects
 Remove Claude-specific auth mounts from `.carthage/docker-compose.yaml`:
@@ -36,9 +39,17 @@ Update `.carthage/config.toml` to the new versioning fields:
 ```toml
 schema_version = 1
 template_version = 1
+base_image_tag = "v2"
 ```
 
 Remove the legacy `version` and `annexed_with_cli` fields after the upgrade.
+
+After upgrading the CLI and running `carthage fortify`, update
+`.carthage/Dockerfile`:
+
+```dockerfile
+FROM carthage-base-personal:v2
+```
 
 ## Historical CLI-Versioned Entries
 

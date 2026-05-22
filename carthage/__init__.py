@@ -6,12 +6,12 @@ skills ship inside the CLI wheel via
 `tool.hatch.build.targets.wheel.force-include`, so installing CLI vN.M
 means skill vN.M is on disk after `carthage fortify` — no drift possible.
 
-Compatibility policy: projects pin to a base-image *major* (e.g. `:v1`).
+Compatibility policy: projects pin to a base-image *major* (e.g. `:v2`).
 TOML schemas and annex templates have separate integer versions because they
 move independently. Old projects never auto-upgrade.
 """
 
-__version__ = "1.2.0"
+__version__ = "2.0.0"
 
 # The project `.carthage/config.toml` schema version the CLI currently writes.
 CURRENT_PROJECT_SCHEMA_VERSION = 1
@@ -26,7 +26,7 @@ CURRENT_TEMPLATE_VERSION = 1
 # The base image major this CLI expects. When the CLI bumps its major, this
 # likely bumps too — but not always; a CLI major bump may just be a config
 # schema change.
-EXPECTED_BASE_IMAGE_TAG = "v1"
+EXPECTED_BASE_IMAGE_TAG = "v2"
 
 BASE_IMAGE_REPO = "ghcr.io/speculative/carthage-base"
 PERSONAL_BASE_IMAGE_REPO = "carthage-base-personal"

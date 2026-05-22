@@ -8,7 +8,7 @@
 # Do NOT add a trailing `USER carthage` — the base image already sets it,
 # and the entrypoint runs as that user.
 
-FROM {{ base_image | default('carthage-base-personal:v1') }}
+FROM {{ base_image | default('carthage-base-personal:v2') }}
 
 USER root
 

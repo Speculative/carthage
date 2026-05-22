@@ -68,7 +68,7 @@ carthage attach   # drops you into a tmux session with the configured agent runn
 ### What is **not** enforced
 
 - **Host-LAN isolation.** Carthage does *not* firewall off RFC1918 addresses. If the host can reach `192.168.1.1`, the container can too. Earlier iterations shipped an iptables-based lockdown; it was dropped because it added `NET_ADMIN` capability in exchange for defense-in-depth that doesn't pull its weight for this threat model (the actually-load-bearing properties are non-root + cap drops + no-sudo + no-socket + scoped mounts + ephemeral lifecycle). If a specific project needs LAN isolation, add `NET_ADMIN` and `iptables` rules in its `.carthage/Dockerfile` / compose file.
-- **Read-only rootfs.** Too much friction with dev tooling (compilers, installers, pip/npm caches). Not enabled in v1; may revisit.
+- **Read-only rootfs.** Too much friction with dev tooling (compilers, installers, pip/npm caches). Not enabled in v2; may revisit.
 - **User namespace remapping.** Conflicts with the host-UID-matching design.
 - **Ports by default.** Sidecars (Postgres, Redis, etc.) are internal-only — the `dev` container reaches them via Docker DNS (`redis:6379`, etc.), and nothing is bound on the host. Host-side ports for local browser testing are explicit opt-in during `/carthage-annex`.
 
@@ -77,13 +77,13 @@ carthage attach   # drops you into a tmux session with the configured agent runn
 Carthage ships three artifacts that share a single semver:
 
 1. The `carthage` CLI (versioned in `pyproject.toml`).
-2. The `carthage-base` Docker image, published as `:v1`, `:v1.2`, `:latest` on GHCR. `carthage fortify` layers local personal config on top as `carthage-base-personal:v1`; projects normally inherit from that local image.
+2. The `carthage-base` Docker image, published as `:v2`, `:v2.0`, `:latest` on GHCR. `carthage fortify` layers local personal config on top as `carthage-base-personal:v2`; projects normally inherit from that local image.
 3. The personal Carthage skills installed by `carthage fortify` (`carthage-annex`).
 
 Compatibility commitments:
 
 - The CLI reads `.carthage/config.toml` schemas one major back.
-- The `carthage-base` image maintains compatibility within a major — `:v1.5` won't break projects pinning `:v1`.
+- The `carthage-base` image maintains compatibility within a major — `:v2.5` won't break projects pinning `:v2`.
 - Major bumps require explicit per-project migration. Old projects opt in to new features; they never auto-upgrade.
 
 The `.carthage/config.toml` schema (v1) looks like:
@@ -92,7 +92,7 @@ The `.carthage/config.toml` schema (v1) looks like:
 [carthage]
 schema_version   = 1       # project config TOML schema version
 template_version = 1       # annex template bundle version
-base_image_tag   = "v1"    # carthage-base major this project targets
+base_image_tag   = "v2"    # carthage-base major this project targets
 service_name     = "dev"
 project_slug     = "my-project"
 ```
@@ -104,8 +104,8 @@ There are several upgrade paths because the three artifacts (CLI, base image, in
 1. **CLI** — `uv tool upgrade carthage-cli`. Installs the new CLI binary on the host.
 2. **Skills** — `carthage fortify`. Re-installs `~/.carthage/skills/carthage-annex` from the new wheel and refreshes agent discovery links. Required after every CLI upgrade; not automatic.
 3. **Per-project templates** — in each annexed project, run `/carthage-annex --upgrade` from an agent session. The skill reads its bundled `CHANGELOG.md`, surfaces every entry newer than the project's `template_version`, then proposes file-by-file diffs against your committed `.carthage/`. This is how an existing project picks up template changes (new mounts, new env vars, new hardening defaults). Without this step, your committed compose file stays frozen at whatever template was current when you originally annexed.
-4. **Base image, within a major** — `carthage build --pull` from the project root. The `:v1` tag on GHCR moves forward as we publish minor/patch base-image releases (e.g., new tooling, default config files); `--pull` refreshes that published base, rebuilds the local personal base when the project uses it, then rebuilds the project image. Without `--pull` you stay on whatever base digest is cached locally.
-5. **Base image, across majors** — edit the `FROM` line in `.carthage/Dockerfile` (the source of truth — `base_image_tag` in `.carthage/config.toml` is informational and should be updated as a courtesy), then `carthage build`. Projects normally move from `carthage-base-personal:v1` to the next personal major after `carthage fortify` supports it. Major bumps may require code or config changes; the `carthage-base` release notes will say.
+4. **Base image, within a major** — `carthage build --pull` from the project root. The `:v2` tag on GHCR moves forward as we publish minor/patch base-image releases (e.g., new tooling, default config files); `--pull` refreshes that published base, rebuilds the local personal base when the project uses it, then rebuilds the project image. Without `--pull` you stay on whatever base digest is cached locally.
+5. **Base image, across majors** — edit the `FROM` line in `.carthage/Dockerfile` (the source of truth — `base_image_tag` in `.carthage/config.toml` is informational and should be updated as a courtesy), then `carthage build`. Projects normally move from `carthage-base-personal:v2` to the next personal major after `carthage fortify` supports it. Major bumps may require code or config changes; the `carthage-base` release notes will say.
 
 `carthage survey` surfaces version-alignment drift across all of these axes (CLI, skills, project schema, Dockerfile `FROM`).
 
@@ -150,7 +150,7 @@ In a project-local `.carthage/config.toml`:
 disable = ["notes"]
 ```
 
-`carthage fortify` builds a local `carthage-base-personal:v1` image from the
+`carthage fortify` builds a local `carthage-base-personal:v2` image from the
 published Carthage base and installs `[image].apt_packages` into that personal
 layer. Newly annexed projects inherit from this local personal image. Re-run
 `carthage fortify` after changing `[image]`.

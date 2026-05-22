@@ -14,7 +14,7 @@ def _write_project(root: Path, extra: str = "") -> None:
 [carthage]
 schema_version = 1
 template_version = 1
-base_image_tag = "v1"
+base_image_tag = "v2"
 service_name = "dev"
 project_slug = "demo"
 {extra}
@@ -83,6 +83,7 @@ def test_personal_compose_override_adds_mounts_and_environment(tmp_path):
         "CARTHAGE_AGENT_UPDATE_COMMAND": "",
         "CARTHAGE_AGENT_WINDOW": "claude",
         "CARTHAGE_TMUX_SESSION": "carthage-session",
+        "CLAUDE_CODE_NO_FLICKER": "1",
         "EDITOR": "vim",
     }
     assert service["volumes"] == [
@@ -140,6 +141,7 @@ disable = ["notes", "editor"]
         "CARTHAGE_AGENT_UPDATE_COMMAND": "",
         "CARTHAGE_AGENT_WINDOW": "claude",
         "CARTHAGE_TMUX_SESSION": "carthage-session",
+        "CLAUDE_CODE_NO_FLICKER": "1",
     }
     assert service["volumes"] == [
         {
@@ -182,6 +184,7 @@ def test_personal_and_port_overrides_are_separate_files(tmp_path):
             "CARTHAGE_AGENT_UPDATE_COMMAND": "",
             "CARTHAGE_AGENT_WINDOW": "claude",
             "CARTHAGE_TMUX_SESSION": "carthage-session",
+            "CLAUDE_CODE_NO_FLICKER": "1",
             "EDITOR": "vim",
         }
         assert "ports: !reset []" in Path(override_files[1]).read_text()
@@ -220,6 +223,7 @@ default = "codex"
         "CARTHAGE_AGENT_WINDOW": "codex",
         "CARTHAGE_TMUX_SESSION": "carthage-session",
     }
+    assert "CLAUDE_CODE_NO_FLICKER" not in service["environment"]
     assert {
         "type": "bind",
         "source": "${HOME}/.claude",
