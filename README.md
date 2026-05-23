@@ -43,6 +43,8 @@ carthage attach   # drops you into a tmux session with the configured agent runn
 | `carthage up --no-host-ports` | Start the container with all host bindings stripped (internal-only). |
 | `carthage up --port H:C` | Start with an extra one-off host binding. Explicit, repeatable. |
 | `carthage attach` | Attach to the running container's tmux session. Detach with `Ctrl-b d`. |
+| `carthage agent list` | Show supported agents, which are installed in your personal image, and the default launch agent. |
+| `carthage agent use KIND` | Set the personal default launch agent, adding it to the installed-agent list if needed. Re-run `carthage fortify` afterward if the personal image does not already include it. |
 | `carthage down` | Stop the container. Volumes and images are kept. |
 | `carthage destroy` | Stop and remove containers, volumes, and project-local images. Confirms first. |
 | `carthage build` | Force a rebuild. Pass `--no-cache` to skip the layer cache. |
@@ -141,6 +143,10 @@ value = "vim"
 
 [image]
 apt_packages = ["fzf", "shellcheck"]
+
+[agents]
+installed = ["claude", "codex"]
+default = "claude"
 ```
 
 In a project-local `.carthage/config.toml`:
@@ -151,9 +157,19 @@ disable = ["notes"]
 ```
 
 `carthage fortify` builds a local `carthage-base-personal:v2` image from the
-published Carthage base and installs `[image].apt_packages` into that personal
-layer. Newly annexed projects inherit from this local personal image. Re-run
-`carthage fortify` after changing `[image]`.
+published Carthage base and installs `[image].apt_packages` plus the configured
+`[agents].installed` agent CLIs into that personal layer. Newly annexed projects
+inherit from this local personal image. Re-run `carthage fortify` after changing
+`[image]` or adding a new installed agent.
+
+The default launch agent is runtime config, so switching between already
+installed agents is quick:
+
+```bash
+carthage agent use codex
+carthage up
+carthage attach
+```
 
 Malformed or unsupported personal config is reported as a warning and ignored.
 Project-local `.carthage/config.toml` remains the source of truth for each

@@ -5,7 +5,6 @@
 # What lives here:
 #   - git, tmux, curl, openssh-client, jq, ripgrep, ca-certificates
 #   - Python 3.12 + uv
-#   - Node.js LTS (kept on PATH for projects that FROM this image)
 #   - /etc/carthage/SANDBOX.md (sandbox-awareness document)
 #   - a non-root `carthage` user whose UID/GID match the host
 #
@@ -16,6 +15,9 @@
 #   - passwordless sudo — system packages are Dockerfile-time, not runtime.
 #   - agent CLIs — `carthage fortify` installs configured agents in the local
 #     personal image layer.
+#   - language runtimes that are not needed by every project. For example,
+#     Codex installs Node/npm in the personal layer; project-specific Node
+#     versions belong in `.carthage/Dockerfile`.
 #   - An in-container host-LAN firewall. Carthage does NOT isolate the container
 #     from the host's LAN; see README "Security model" for what we do and do not
 #     defend against.
