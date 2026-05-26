@@ -8,6 +8,8 @@ image (no compose, no project fixture) and asserts:
   - system gitconfig sets delta as core.pager
   - fzf's bash key-bindings load and install Ctrl-R history search
   - PAGER=less is set in the image env
+  - agent CLIs and agent-specific package managers are not baked into the
+    neutral base image
 
 We piggyback on the session-scoped `base_image` fixture in conftest.py,
 which builds the image once per pytest run.
@@ -62,12 +64,17 @@ def test_system_gitconfig_pager_is_delta(base_image: str) -> None:
     ("PAGER", "less"),
     ("EDITOR", "vim"),
     ("VISUAL", "vim"),
-    ("CLAUDE_CODE_NO_FLICKER", "1"),
 ])
 def test_env_var(base_image: str, var: str, expected: str) -> None:
     r = _run(base_image, "sh", "-c", f"echo ${var}")
     assert r.returncode == 0
     assert r.stdout.strip() == expected, f"{var}: {r.stdout!r}"
+
+
+@pytest.mark.parametrize("binary", ["claude", "codex", "node", "npm"])
+def test_agent_tooling_not_bundled_in_base_image(base_image: str, binary: str) -> None:
+    r = _run(base_image, "sh", "-c", f"! command -v {binary}")
+    assert r.returncode == 0, f"{binary} should be installed by the personal image or project image, not base"
 
 
 def test_fzf_keybindings_load_in_interactive_bash(base_image: str) -> None:

@@ -1,0 +1,6 @@
+[carthage]
+schema_version = 1
+
+[agents]
+installed = ["codex"]
+default = "codex"

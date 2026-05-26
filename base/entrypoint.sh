@@ -2,7 +2,7 @@
 # carthage-entrypoint — PID 1 inside every Carthage container.
 #
 # Runs as the `carthage` user (the image sets `USER carthage` so we never need
-# root at runtime). Starts a detached tmux server with a `claude` session so
+# root at runtime). Starts a detached tmux server with the configured agent so
 # `carthage attach` always has something to attach to. Finally execs the
 # container CMD (default: `sleep infinity`).
 #
@@ -12,25 +12,38 @@ set -euo pipefail
 
 log() { printf '[carthage-entrypoint] %s\n' "$*" >&2; }
 
-# Ensure ~/.claude exists. On typical invocations the host bind-mount provides
-# this; if the image is run without the mount, we still want Claude Code to
-# have a writable config dir.
-if [ ! -d "${HOME:-/home/carthage}/.claude" ]; then
-    mkdir -p "${HOME:-/home/carthage}/.claude"
+tmux_session="${CARTHAGE_TMUX_SESSION:-carthage-session}"
+agent_window="${CARTHAGE_AGENT_WINDOW:-shell}"
+agent_command="${CARTHAGE_AGENT_COMMAND:-bash -l}"
+agent_update_command="${CARTHAGE_AGENT_UPDATE_COMMAND:-}"
+tmux_agent_command="bash -lc '${agent_command}; exec bash -l'"
+
+if [ "${CARTHAGE_AGENT_AUTO_UPDATE:-0}" = "1" ] && [ -n "${agent_update_command}" ]; then
+    log "updating agent with: ${agent_update_command}"
+    if ${agent_update_command}; then
+        log "agent update complete"
+    else
+        log "agent update failed; continuing"
+    fi
 fi
 
-# --- tmux session for Claude Code ------------------------------------------
-# `claude --dangerously-skip-permissions` is appropriate here because the
-# sandbox *is* the permission boundary — prompting inside adds no safety.
-if ! tmux has-session -t claude 2>/dev/null; then
-    # `exec` so the shell tmux spawns replaces itself with claude in place.
+# --- tmux session for the configured agent ---------------------------------
+# Agent auto-approval flags are appropriate here because the sandbox *is* the
+# permission boundary — prompting inside adds no safety.
+if ! tmux has-session -t "${tmux_session}" 2>/dev/null; then
+    # `exec` so the shell tmux spawns replaces itself with the agent in place.
     # Without `exec`, the pane's process group leader is bash and tmux's
-    # auto-rename reports the window as "bash" instead of "claude".
-    tmux new-session -d -s claude \
-        'exec claude --dangerously-skip-permissions'
-    log "started tmux session 'claude'"
+    # auto-rename reports the window as "bash" instead of the agent binary.
+    tmux new-session -d -s "${tmux_session}" -n "${agent_window}" \
+        "${tmux_agent_command}"
+    log "started tmux session '${tmux_session}' with window '${agent_window}'"
+elif ! tmux list-windows -t "${tmux_session}" -F '#{window_name}' \
+        | grep -Fx -- "${agent_window}" >/dev/null; then
+    tmux new-window -d -t "${tmux_session}:" -n "${agent_window}" \
+        "${tmux_agent_command}"
+    log "added tmux window '${agent_window}' to session '${tmux_session}'"
 else
-    log "tmux session 'claude' already exists"
+    log "tmux session '${tmux_session}' already has window '${agent_window}'"
 fi
 
 # --- Exec the CMD ----------------------------------------------------------

@@ -3,9 +3,9 @@
 Schema shape (v1):
 
     [carthage]
-    version          = "1"      # config schema version
-    base_image_tag   = "v1"     # which carthage-base MAJOR the project targets
-    annexed_with_cli = "1.0.1"  # informational; what CLI did the annex
+    schema_version   = 1        # config TOML schema version
+    template_version = 1        # annex template bundle version
+    base_image_tag   = "v2"     # which carthage-base MAJOR the project targets
     service_name     = "dev"
     project_slug     = "my-project"
 
@@ -18,8 +18,7 @@ Optional personal-config opt-outs:
 This avoids one class of drift (tag in config disagrees with `FROM` in
 Dockerfile). The CLI synthesizes `ghcr.io/speculative/carthage-base:<tag>`.
 
-The CLI accepts config schemas one major back: a `v2` CLI reads `version=1`
-configs (with a soft note pointing at `/carthage-migrate`). Anything older
+The CLI accepts config schemas in its compatibility window. Anything older
 than that is rejected; anything newer means the CLI is out of date.
 """
 
@@ -36,8 +35,9 @@ else:  # pragma: no cover — fallback for 3.10
 
 from carthage import (
     BASE_IMAGE_REPO,
-    CURRENT_CONFIG_SCHEMA,
-    MIN_READABLE_CONFIG_SCHEMA,
+    CURRENT_PROJECT_SCHEMA_VERSION,
+    EXPECTED_BASE_IMAGE_TAG,
+    MIN_READABLE_PROJECT_SCHEMA_VERSION,
 )
 
 
@@ -46,16 +46,16 @@ class ConfigError(RuntimeError):
 
 
 class SchemaTooOldError(ConfigError):
-    """The config schema is older than this CLI can still read. Point user at
-    `/carthage-migrate`."""
+    """The config schema is older than this CLI can still read."""
 
 
 @dataclass(frozen=True)
 class CarthageConfig:
     project_root: Path
-    version: str                  # schema version
-    base_image_tag: str           # e.g. "v1"
-    annexed_with_cli: str | None  # informational; None for pre-1.0 configs
+    schema_version: int           # schema version
+    template_version: int | None  # None for legacy annexed_with_cli projects
+    legacy_annexed_with_cli: str | None
+    base_image_tag: str           # e.g. "v2"
     service_name: str
     project_slug: str
     schema_is_outdated: bool      # True if schema < CURRENT but within compat window
@@ -113,7 +113,7 @@ def find_project_root(start: Path | None = None) -> Path:
             return candidate
     raise ConfigError(
         "No `.carthage/config.toml` found in this directory or any parent. "
-        "Run `/carthage-annex` in Claude Code to set up this project first."
+        "Run `/carthage-annex` from a configured agent to set up this project first."
     )
 
 
@@ -132,7 +132,7 @@ def load_config(project_root: Path | None = None) -> CarthageConfig:
             f"{config_path}: missing `[carthage]` table at the top level."
         )
 
-    required = ("version", "service_name", "project_slug")
+    required = ("service_name", "project_slug")
     missing = [k for k in required if k not in table]
     if missing:
         raise ConfigError(
@@ -140,24 +140,24 @@ def load_config(project_root: Path | None = None) -> CarthageConfig:
             + ", ".join(missing)
         )
 
-    schema_version = str(table["version"])
+    schema_version = _parse_required_version_int(
+        table.get("schema_version", table.get("version")),
+        field=f"{config_path}: [carthage].schema_version",
+    )
 
     # --- Schema compat check ---
-    # Lexicographic compare on single-digit schema ints works for the
-    # foreseeable future (we're at "1"; bumping to "2" stays fine). If we
-    # ever hit "10" we'll revisit.
-    if schema_version < MIN_READABLE_CONFIG_SCHEMA:
+    if schema_version < MIN_READABLE_PROJECT_SCHEMA_VERSION:
         raise SchemaTooOldError(
             f"{config_path}: schema version '{schema_version}' is older than this "
-            f"CLI can read (min: '{MIN_READABLE_CONFIG_SCHEMA}', current: "
-            f"'{CURRENT_CONFIG_SCHEMA}'). Run `/carthage-migrate` in this project "
-            "from Claude Code to upgrade the config."
+            f"CLI can read (min: '{MIN_READABLE_PROJECT_SCHEMA_VERSION}', "
+            f"current: '{CURRENT_PROJECT_SCHEMA_VERSION}'). Upgrade the project "
+            "config before using this CLI."
         )
-    schema_is_outdated = schema_version < CURRENT_CONFIG_SCHEMA
-    if schema_version > CURRENT_CONFIG_SCHEMA:
+    schema_is_outdated = schema_version < CURRENT_PROJECT_SCHEMA_VERSION
+    if schema_version > CURRENT_PROJECT_SCHEMA_VERSION:
         raise ConfigError(
             f"{config_path}: schema version '{schema_version}' is newer than this "
-            f"CLI knows about (current: '{CURRENT_CONFIG_SCHEMA}'). "
+            f"CLI knows about (current: '{CURRENT_PROJECT_SCHEMA_VERSION}'). "
             "Upgrade your carthage CLI: `uv tool upgrade carthage-cli`."
         )
 
@@ -169,12 +169,18 @@ def load_config(project_root: Path | None = None) -> CarthageConfig:
             "Use lowercase letters, digits, '.', '_', or '-' (starting with alnum)."
         )
 
-    # base_image_tag: accept v1 schema files that pre-date this field and fall
+    # base_image_tag: accept schema files that pre-date this field and fall
     # back to the schema default. In practice the annex skill always writes it.
-    base_image_tag = str(table.get("base_image_tag", "v1"))
+    base_image_tag = str(table.get("base_image_tag", EXPECTED_BASE_IMAGE_TAG))
 
-    annexed_with_cli = table.get("annexed_with_cli")
-    annexed_with_cli = str(annexed_with_cli) if annexed_with_cli is not None else None
+    template_version = _parse_optional_version_int(
+        table.get("template_version"),
+        field=f"{config_path}: [carthage].template_version",
+    )
+    legacy_annexed_with_cli = table.get("annexed_with_cli")
+    legacy_annexed_with_cli = (
+        str(legacy_annexed_with_cli) if legacy_annexed_with_cli is not None else None
+    )
 
     override = table.get("base_image")
     base_image_override = str(override) if override else None
@@ -191,12 +197,43 @@ def load_config(project_root: Path | None = None) -> CarthageConfig:
 
     return CarthageConfig(
         project_root=root,
-        version=schema_version,
+        schema_version=schema_version,
+        template_version=template_version,
+        legacy_annexed_with_cli=legacy_annexed_with_cli,
         base_image_tag=base_image_tag,
-        annexed_with_cli=annexed_with_cli,
         service_name=str(table["service_name"]),
         project_slug=slug,
         schema_is_outdated=schema_is_outdated,
         base_image_override=base_image_override,
         personal_disabled=personal_disabled,
     )
+
+
+def _parse_required_version_int(
+    value: object,
+    *,
+    field: str,
+) -> int:
+    if value is None:
+        raise ConfigError(f"{field} is required")
+    parsed = _coerce_version_int(value)
+    if parsed is None:
+        raise ConfigError(f"{field} must be an integer")
+    return parsed
+
+
+def _parse_optional_version_int(value: object, *, field: str) -> int | None:
+    if value is None:
+        return None
+    parsed = _coerce_version_int(value)
+    if parsed is None:
+        raise ConfigError(f"{field} must be an integer")
+    return parsed
+
+
+def _coerce_version_int(value: object) -> int | None:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.isdecimal():
+        return int(value)
+    return None

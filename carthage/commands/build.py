@@ -9,9 +9,15 @@ import click
 from rich.console import Console
 
 from carthage import compose, image
+from carthage.agents import AgentConfigError, require_agent_profile
 from carthage.config import ConfigError, load_config
 from carthage.personal_config import load_personal_config
-from carthage.personal_image import build_personal_image, personal_image_ref
+from carthage.personal_image import (
+    PersonalImageRequiredError,
+    build_personal_image,
+    personal_image_ref,
+    require_project_personal_image,
+)
 
 console = Console()
 
@@ -27,11 +33,13 @@ def build(no_cache: bool, pull: bool) -> None:
         console.print(f"[red]error:[/red] {exc}")
         sys.exit(2)
 
-    from_ref = _dockerfile_from_ref(cfg)
-    pulls_local_personal_image = (
-        pull and from_ref is not None and from_ref == personal_image_ref(cfg.base_image_tag)
-    )
-    if pulls_local_personal_image:
+    try:
+        from_ref = require_project_personal_image(cfg.dockerfile, cfg.base_image_tag)
+    except PersonalImageRequiredError as exc:
+        console.print(f"[red]error:[/red] {exc}")
+        sys.exit(2)
+
+    if pull:
         console.print(f"[cyan]refreshing[/cyan] {cfg.base_image}…")
         ok, detail = image.pull_base_image(cfg.base_image)
         if not ok:
@@ -40,6 +48,11 @@ def build(no_cache: bool, pull: bool) -> None:
         personal = load_personal_config()
         for warning in personal.warnings:
             console.print(f"[yellow]note:[/yellow] personal config: {warning}")
+        try:
+            require_agent_profile(personal.config.agents.default)
+        except AgentConfigError as exc:
+            console.print(f"[red]error:[/red] {exc}")
+            sys.exit(2)
         console.print(f"[cyan]rebuilding[/cyan] {from_ref}…")
         ok, detail = build_personal_image(
             base_image=cfg.base_image,
@@ -53,8 +66,6 @@ def build(no_cache: bool, pull: bool) -> None:
     args = ["build"]
     if no_cache:
         args.append("--no-cache")
-    if pull and not pulls_local_personal_image:
-        args.append("--pull")
     args.append(cfg.service_name)
 
     console.print(f"[cyan]building[/cyan] {cfg.project_image_repo}…")
@@ -80,10 +91,3 @@ def build(no_cache: bool, pull: bool) -> None:
         )
 
     console.print(f"[green]build complete.[/green] hash={new_hash}")
-
-
-def _dockerfile_from_ref(cfg) -> str | None:
-    try:
-        return image.parse_base_image(cfg.dockerfile.read_text())
-    except OSError:
-        return None

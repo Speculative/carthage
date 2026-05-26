@@ -16,10 +16,11 @@ the rules of the sandbox so you don't waste effort working around them.
   containers or escape via the Docker daemon.
 - `pids_limit` and `mem_limit` / `cpus` caps are set on the container.
 - File mounts are scoped: `/workspace` (the project source tree),
-  `/home/carthage/.claude` (auth + session state), a read-only
-  `/home/carthage/.gitconfig`, and `/commandhistory` (per-project
-  shell-state dir from `~/.carthage/state/<slug>/`). Nothing else from
-  the host is visible.
+  configured agent auth/session directories such as `/home/carthage/.claude`
+  or `/home/carthage/.codex`, a read-only `/home/carthage/.gitconfig`, and
+  `/commandhistory` (per-project shell-state dir from
+  `~/.carthage/state/<slug>/`). Nothing else from the host is visible unless
+  the project or personal config explicitly adds it.
 - The container is ephemeral — `carthage destroy` wipes it cleanly.
 
 ## What is **not** isolated
@@ -58,11 +59,11 @@ the rules of the sandbox so you don't waste effort working around them.
   signing keys). If you hit this, ask the user to commit on the host
   instead.
 
-## Permissions prompt
+## Agent permission prompts
 
-- `--dangerously-skip-permissions` is the right flag for this environment.
-  The sandbox itself is the permission boundary; prompting inside an isolated
-  container adds friction without adding safety.
+- Carthage launches supported agents with the agent's permission-bypass flag
+  when one exists. The sandbox itself is the permission boundary; prompting
+  inside an isolated container adds friction without adding safety.
 
 ## Missing services
 
@@ -76,8 +77,10 @@ the rules of the sandbox so you don't waste effort working around them.
 
 - `/workspace` — the project's source tree (read/write). This is your
   working directory.
-- `/home/carthage/.claude` — shared with the host, so your session state
-  and login persist across container rebuilds.
+- Agent auth/session directories — shared with the host according to the
+  user's personal Carthage config, so login state persists across container
+  rebuilds. Examples include `/home/carthage/.claude` and
+  `/home/carthage/.codex`.
 - `/home/carthage/.gitconfig` — read-only, shared with the host.
 - `/commandhistory` — per-project state dir (read/write). Currently holds
   `.bash_history`; lives at `~/.carthage/state/<slug>/` on the host so

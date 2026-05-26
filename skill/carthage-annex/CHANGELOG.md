@@ -1,10 +1,57 @@
-# Changelog — carthage-annex skill
+# Changelog — carthage-annex templates
 
 This changelog covers the *templates* this skill generates: `.carthage/Dockerfile`, `.carthage/docker-compose.yaml`, `.carthage/config.toml`, and the in-project `carthage-env` skill. CLI behavior changes that don't affect generated files are out of scope here — see the project root for those.
 
-`/carthage-annex --upgrade` reads this file and surfaces entries newer than the target project's `annexed_with_cli`, so existing projects get the rationale and migration steps before any diff is applied.
+`/carthage-annex --upgrade` reads this file and surfaces entries newer than the target project's `template_version`, so existing projects get the rationale and migration steps before any diff is applied. Projects that still have the legacy `annexed_with_cli` field should be treated as older than Template 1, while the historical entries below explain the pre-2.0 changes newer than their recorded CLI version.
 
-The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions match the CLI/skill semver.
+New entries use flat template versions. Historical entries before Carthage 2.0 used CLI semver because `annexed_with_cli` was the old template drift marker.
+
+## Template 1 — 2026-05-21
+
+### Changed
+- **Agent auth mounts are no longer committed in project compose files.**
+  `carthage up` injects auth mounts from the user's personal agent config, so
+  a project can be used with Claude, Codex, or another supported agent without
+  editing `.carthage/docker-compose.yaml`.
+- **Generated projects use Carthage-owned environment skills for each agent
+  discovery path** instead of storing Carthage guidance in `AGENTS.md`.
+- **Generated config uses integer `schema_version` and `template_version`
+  fields** instead of overloading CLI semver as the project template marker.
+- **Generated project Dockerfiles now inherit from `carthage-base-personal:v2`.**
+  Carthage 2.0 uses a neutral published base image and installs configured
+  agent CLIs in the local personal image layer.
+
+### Migration for existing projects
+Remove Claude-specific auth mounts from `.carthage/docker-compose.yaml`:
+
+```yaml
+      - ${HOME}/.claude:/home/carthage/.claude:rw
+      - ${HOME}/.claude.json:/home/carthage/.claude.json:rw
+```
+
+Then add or refresh the project-local `carthage-env` skill generated from the
+current template under the agent discovery paths you want the project to
+support, such as `.claude/skills/carthage-env/SKILL.md` and
+`.agents/skills/carthage-env/SKILL.md`.
+
+Update `.carthage/config.toml` to the new versioning fields:
+
+```toml
+schema_version = 1
+template_version = 1
+base_image_tag = "v2"
+```
+
+Remove the legacy `version` and `annexed_with_cli` fields after the upgrade.
+
+After upgrading the CLI and running `carthage fortify`, update
+`.carthage/Dockerfile`:
+
+```dockerfile
+FROM carthage-base-personal:v2
+```
+
+## Historical CLI-Versioned Entries
 
 ## [1.3.0] — 2026-05-19
 

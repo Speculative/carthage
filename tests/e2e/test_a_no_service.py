@@ -2,7 +2,7 @@
 
 Verifies:
   - `carthage up` lands in a running container with the source mount and
-    tmux 'claude' session in place.
+    tmux 'carthage-session' session in place.
   - Host-side `curl http://localhost:18000` reaches the container's server
     via the published port.
   - Hardening spot-check: no sudo, NoNewPrivs=1, no docker socket, narrow caps.
@@ -48,10 +48,29 @@ def test_up_attach_and_host_reachable(
 
     # tmux session exists (entrypoint created it).
     r = subprocess.run(
-        ["docker", "exec", container_id, "tmux", "has-session", "-t", "claude"],
+        ["docker", "exec", container_id, "tmux", "has-session", "-t", "carthage-session"],
         capture_output=True, text=True,
     )
-    assert r.returncode == 0, f"tmux session 'claude' missing: {r.stderr}"
+    assert r.returncode == 0, f"tmux session 'carthage-session' missing: {r.stderr}"
+
+    r = subprocess.run(
+        [
+            "docker", "exec", container_id,
+            "tmux", "list-windows", "-t", "carthage-session",
+            "-F", "#{window_name}",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert r.returncode == 0
+    assert "claude" in r.stdout.splitlines()
+
+    r = subprocess.run(
+        ["docker", "exec", container_id, "sh", "-lc", "command -v claude"],
+        capture_output=True,
+        text=True,
+    )
+    assert r.returncode == 0, f"personal Claude install missing: {r.stderr}"
 
     # Start the python server inside the container in the background.
     subprocess.run(

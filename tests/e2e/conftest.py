@@ -24,6 +24,7 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 # Tag we use for the locally-built base image during E2E. Pinning a distinct
 # tag means we don't clobber any manually-pulled ghcr.io/speculative/carthage-base.
 E2E_BASE_TAG = "carthage-base:e2e"
+E2E_PERSONAL_BASE_REPO = "carthage-base-personal-e2e"
 
 # Synthetic OCI version label baked into the e2e build. Must NOT match a real
 # carthage-base release tag — tests that re-tag the image to simulate a newer
@@ -90,6 +91,15 @@ def project_dir(tmp_path: Path, request) -> Path:
     # Unique dest so multiple tests can run in parallel without name clashes.
     dest = tmp_path / f"{name}-{uuid.uuid4().hex[:8]}"
     shutil.copytree(src, dest)
+    dockerfile = dest / ".carthage" / "Dockerfile"
+    if dockerfile.exists():
+        text = dockerfile.read_text()
+        lines = text.splitlines()
+        for index, line in enumerate(lines):
+            if line.startswith("FROM "):
+                lines[index] = f"FROM {E2E_PERSONAL_BASE_REPO}:v2"
+                break
+        dockerfile.write_text("\n".join(lines) + "\n")
     return dest
 
 
@@ -159,8 +169,13 @@ def run_carthage(*args: str, cwd: Path, env: dict[str, str] | None = None) -> su
     runs out of the dev checkout, where the package may not be `uv tool install`-ed.
     """
     full_env = os.environ.copy()
+    full_env.setdefault("CARTHAGE_PERSONAL_IMAGE_REPO", E2E_PERSONAL_BASE_REPO)
     if env:
         full_env.update(env)
+    else:
+        full_env["CARTHAGE_PERSONAL_CONFIG"] = str(
+            REPO_ROOT / "tests" / "e2e" / "fixtures" / "personal-config.claude.toml"
+        )
     # Make sure PYTHONPATH lets us import the CLI package from source.
     existing = full_env.get("PYTHONPATH", "")
     full_env["PYTHONPATH"] = f"{REPO_ROOT}{os.pathsep}{existing}" if existing else str(REPO_ROOT)

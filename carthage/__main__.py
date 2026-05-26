@@ -11,6 +11,7 @@ from carthage import (
     __version__,
 )
 from carthage.commands import (
+    agent,
     attach,
     build,
     destroy,
@@ -73,6 +74,7 @@ def cli(ctx: click.Context) -> None:
 
 
 cli.add_command(fortify.fortify)
+cli.add_command(agent.agent)
 cli.add_command(up.up)
 cli.add_command(down.down)
 cli.add_command(build.build)

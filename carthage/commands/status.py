@@ -19,8 +19,10 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from carthage import __version__, annex_template_is_outdated, compose, image
+from carthage import CURRENT_TEMPLATE_VERSION, annex_template_is_outdated, compose, image
+from carthage.agents import DEFAULT_TMUX_SESSION, AgentConfigError, require_agent_profile
 from carthage.config import ConfigError, load_config
+from carthage.personal_config import load_personal_config
 
 console = Console()
 
@@ -135,15 +137,43 @@ def _status_current() -> None:
         table.add_row("services", "[red]compose ps failed[/red]")
 
     # tmux session (reflects whether entrypoint successfully spun it up)
+    personal = load_personal_config()
+    try:
+        profile = require_agent_profile(personal.config.agents.default)
+    except AgentConfigError as exc:
+        table.add_row("agent", f"[yellow]{exc}[/yellow]")
+        profile = None
     probe = compose.run(
         cfg,
-        ["exec", "-T", cfg.service_name, "tmux", "has-session", "-t", "claude"],
+        ["exec", "-T", cfg.service_name, "tmux", "has-session", "-t", DEFAULT_TMUX_SESSION],
         capture=True, check=False,
     )
     if probe.returncode == 0:
-        table.add_row("tmux 'claude'", "[green]alive[/green]")
+        window_probe = compose.run(
+            cfg,
+            [
+                "exec", "-T", cfg.service_name,
+                "tmux", "list-windows", "-t", DEFAULT_TMUX_SESSION,
+                "-F", "#{window_name}",
+            ],
+            capture=True,
+            check=False,
+        )
+        windows = set(window_probe.stdout.splitlines()) if window_probe.returncode == 0 else set()
+        if profile is None:
+            table.add_row(f"tmux '{DEFAULT_TMUX_SESSION}'", "[green]alive[/green]")
+        elif profile.tmux_window in windows:
+            table.add_row(
+                f"tmux '{DEFAULT_TMUX_SESSION}'",
+                f"[green]alive[/green] ({profile.tmux_window})",
+            )
+        else:
+            table.add_row(
+                f"tmux '{DEFAULT_TMUX_SESSION}'",
+                f"[yellow]alive[/yellow] ({profile.tmux_window} window missing)",
+            )
     else:
-        table.add_row("tmux 'claude'", "[dim]absent or container stopped[/dim]")
+        table.add_row(f"tmux '{DEFAULT_TMUX_SESSION}'", "[dim]absent or container stopped[/dim]")
 
     # Image freshness
     try:
@@ -190,17 +220,22 @@ def _status_current() -> None:
             row = f"v{running_version} (couldn't read latest from {cfg.base_image})"
         table.add_row("running base", row)
 
-    table.add_row("config schema", cfg.version + (
-        " [yellow](outdated — run /carthage-migrate)[/yellow]" if cfg.schema_is_outdated else ""
+    table.add_row("config schema", str(cfg.schema_version) + (
+        " [yellow](outdated)[/yellow]" if cfg.schema_is_outdated else ""
     ))
 
-    annex_label = cfg.annexed_with_cli or "pre-1.0"
-    if annex_template_is_outdated(cfg.annexed_with_cli):
-        annex_label += (
-            f" [yellow](CLI is {__version__} — run /carthage-annex --upgrade)"
+    template_label = (
+        str(cfg.template_version)
+        if cfg.template_version is not None
+        else f"legacy ({cfg.legacy_annexed_with_cli or 'unknown'})"
+    )
+    if annex_template_is_outdated(cfg.template_version):
+        template_label += (
+            f" [yellow](current is {CURRENT_TEMPLATE_VERSION} — "
+            "run /carthage-annex --upgrade)"
             "[/yellow]"
         )
-    table.add_row("annexed under", annex_label)
+    table.add_row("template", template_label)
 
     table.add_row("project root", str(cfg.project_root))
 

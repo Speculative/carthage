@@ -35,8 +35,16 @@ def _env(home: Path, personal_repo: str) -> dict[str, str]:
     }
 
 
+def _agent_config_block() -> str:
+    return """
+[agents]
+installed = ["claude"]
+default = "claude"
+"""
+
+
 def _use_personal_image(project_dir: Path, personal_repo: str) -> str:
-    image_ref = f"{personal_repo}:v1"
+    image_ref = f"{personal_repo}:v2"
     dockerfile = project_dir / ".carthage" / "Dockerfile"
     text = dockerfile.read_text()
     lines = text.splitlines()
@@ -96,11 +104,20 @@ def personal_e2e(tmp_path: Path):
 
 
 @pytest.mark.project_fixture("py-http-server")
-def test_up_builds_isolated_personal_image_without_personal_config(
+def test_up_builds_isolated_personal_image_with_agent_only_personal_config(
     base_image, project_dir, compose_project_name, docker_cleanup, personal_e2e
 ):
     home, repo = personal_e2e
     image_ref = _use_personal_image(project_dir, repo)
+    carthage_home = home / ".carthage"
+    carthage_home.mkdir()
+    (carthage_home / "config.toml").write_text(
+        """
+[carthage]
+schema_version = 1
+"""
+        + _agent_config_block()
+    )
 
     r = run_carthage("up", cwd=project_dir, env=_env(home, repo))
     assert r.returncode == 0, f"carthage up failed:\nstdout={r.stdout}\nstderr={r.stderr}"
@@ -128,7 +145,7 @@ def test_personal_mount_and_environment_land_in_container(
     (carthage_home / "config.toml").write_text(
         """
 [carthage]
-personal_config_version = "1"
+schema_version = 1
 
 [[mounts]]
 id = "notes"
@@ -136,11 +153,12 @@ source = "~/notes"
 target = "/home/carthage/.notes"
 mode = "ro"
 
-[[environment]]
+    [[environment]]
 id = "editor"
 name = "CARTHAGE_E2E_PERSONAL_ENV"
 value = "from-personal-config"
 """
+        + _agent_config_block()
     )
 
     r = run_carthage("up", cwd=project_dir, env=_env(home, repo))
@@ -169,7 +187,7 @@ def test_project_opt_out_disables_personal_items(
     (carthage_home / "config.toml").write_text(
         """
 [carthage]
-personal_config_version = "1"
+schema_version = 1
 
 [[mounts]]
 id = "notes"
@@ -182,6 +200,7 @@ id = "editor"
 name = "CARTHAGE_E2E_PERSONAL_ENV"
 value = "from-personal-config"
 """
+        + _agent_config_block()
     )
     project_config = project_dir / ".carthage" / "config.toml"
     project_config.write_text(project_config.read_text() + '\n[personal]\ndisable = ["notes", "editor"]\n')
@@ -207,11 +226,12 @@ def test_personal_apt_packages_are_available_in_project_container(
     (carthage_home / "config.toml").write_text(
         """
 [carthage]
-personal_config_version = "1"
+schema_version = 1
 
 [image]
 apt_packages = ["shellcheck"]
 """
+        + _agent_config_block()
     )
 
     r = run_carthage("up", cwd=project_dir, env=_env(home, repo))

@@ -1,8 +1,9 @@
 """`carthage fortify` — one-time host setup.
 
-Does dependency checks, then installs the personal Claude skills into
-`~/.claude/skills/` at the version matching the installed CLI. Idempotent —
-re-run after `uv tool upgrade carthage-cli` to pull in matching skill updates.
+Does dependency checks, then installs personal Carthage skills into
+`~/.carthage/skills/` at the version matching the installed CLI and links
+configured agents to that canonical copy. Idempotent — re-run after
+`uv tool upgrade carthage-cli` to pull in matching skill updates.
 
 Skill files are bundled into the CLI wheel via hatch `force-include` (see
 pyproject.toml). At runtime we read them out of `importlib.resources` and
@@ -23,9 +24,26 @@ from rich.console import Console
 
 from carthage import BASE_IMAGE_REPO, EXPECTED_BASE_IMAGE_TAG, __version__
 from carthage import image as base_image
+from carthage.agents import (
+    AgentConfigError,
+    AgentProfile,
+    agent_profiles_for,
+    require_agent_profile,
+    supported_agent_kinds,
+)
+from carthage.commands.agent import _set_agents_table
 from carthage.personal_config import describe_personal_config, load_personal_config
-from carthage.personal_image import build_personal_image, personal_image_ref
-from carthage.skills import MANAGED_SKILLS, SKILLS_DIR, read_skill_version
+from carthage.personal_image import (
+    build_personal_image,
+    personal_image_is_current,
+    personal_image_ref,
+)
+from carthage.skills import (
+    MANAGED_SKILLS,
+    SKILLS_DIR,
+    agent_skill_path,
+    read_skill_version,
+)
 
 console = Console()
 
@@ -60,9 +78,24 @@ def _check_claude_dir() -> tuple[bool, str]:
     if not p.is_dir():
         return False, (
             f"{p} does not exist. Run `claude` on the host once to authenticate "
-            "to Claude Code before using Carthage."
+            "before using Carthage with Claude."
         )
     return True, str(p)
+
+
+def _check_codex_dir() -> tuple[bool, str]:
+    p = Path.home() / ".codex"
+    if not p.is_dir():
+        return False, f"{p} does not exist. Run `codex --login` on the host first."
+    return True, str(p)
+
+
+def _check_agent_auth(profile: AgentProfile) -> tuple[bool, str]:
+    if profile.kind == "claude":
+        return _check_claude_dir()
+    if profile.kind == "codex":
+        return _check_codex_dir()
+    return True, "no host auth check defined"
 
 
 # --- Skill installation ---------------------------------------------------
@@ -104,7 +137,7 @@ def _copy_skill_from_package(name: str, target: Path) -> None:
 
 
 def _install_skill(name: str, *, force: bool = False) -> tuple[bool, str]:
-    """Install (or refresh) the named skill at ~/.claude/skills/<name>/.
+    """Install (or refresh) the named skill at ~/.carthage/skills/<name>/.
 
     Idempotent: if the installed SKILL.md already reports the CLI's version
     and the directory exists, this is a no-op unless `force=True`.
@@ -133,6 +166,28 @@ def _install_skill(name: str, *, force: bool = False) -> tuple[bool, str]:
     return True, f"installed v{__version__}"
 
 
+def _link_skill_for_agent(profile: AgentProfile, name: str) -> tuple[bool, str]:
+    """Expose a canonical Carthage skill through an agent discovery path."""
+    if profile.managed_skill_dir is None:
+        return True, "agent has no managed skill directory"
+
+    source = SKILLS_DIR / name
+    target = agent_skill_path(profile.managed_skill_dir, name)
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target.is_symlink() and target.resolve() == source.resolve():
+            return True, f"linked {target}"
+        if target.exists() or target.is_symlink():
+            if target.is_dir() and not target.is_symlink():
+                shutil.rmtree(target)
+            else:
+                target.unlink()
+        target.symlink_to(source, target_is_directory=True)
+    except OSError as exc:
+        return False, f"failed to link {target} -> {source}: {exc}"
+    return True, f"linked {target}"
+
+
 # --- CLI ------------------------------------------------------------------
 
 
@@ -155,13 +210,45 @@ def fortify(force: bool) -> None:
         ok2, detail2 = _check_compose_v2()
         rows.append(("docker compose v2", ok2, detail2))
 
-    ok3, detail3 = _check_claude_dir()
-    rows.append(("~/.claude directory", ok3, detail3))
-
     personal = load_personal_config()
     rows.append(("personal config", True, describe_personal_config(personal)))
+    try:
+        require_agent_profile(personal.config.agents.default)
+        agent_config_ok = True
+    except AgentConfigError:
+        kinds = supported_agent_kinds()
+        console.print(
+            "\n[yellow]No default agent configured.[/yellow] "
+            "Which agent would you like to use?\n"
+            + "\n".join(f"  {i + 1}. {k}" for i, k in enumerate(kinds))
+        )
+        choice = click.prompt(
+            "Agent",
+            type=click.Choice(list(kinds), case_sensitive=False),
+            default=kinds[0],
+        )
+        path = personal.path
+        try:
+            text = path.read_text() if path.exists() else ""
+            path.parent.mkdir(parents=True, exist_ok=True)
+            installed = list(personal.config.agents.installed)
+            if choice not in installed:
+                installed.insert(0, choice)
+            path.write_text(_set_agents_table(text, installed=installed, default=choice))
+        except OSError as exc:
+            rows.append(("default agent", False, f"failed to write config: {exc}"))
+            agent_config_ok = False
+        else:
+            personal = load_personal_config()
+            rows.append(("default agent", True, f"configured: {choice}"))
+            agent_config_ok = True
 
-    if ok:
+    if agent_config_ok:
+        for profile in agent_profiles_for(personal.config.agents.installed):
+            aok, adetail = _check_agent_auth(profile)
+            rows.append((f"{profile.kind} auth", aok, adetail))
+
+    if ok and agent_config_ok:
         source_image = f"{BASE_IMAGE_REPO}:{EXPECTED_BASE_IMAGE_TAG}"
         target_image = personal_image_ref(EXPECTED_BASE_IMAGE_TAG)
         pull_ok, pull_detail = base_image.pull_base_image(source_image)
@@ -169,18 +256,36 @@ def fortify(force: bool) -> None:
             rows.append(("base image refresh", False, pull_detail))
         else:
             rows.append(("base image refresh", True, pull_detail))
-            build_ok, build_detail = build_personal_image(
+            current, current_detail = personal_image_is_current(
+                image_ref=target_image,
                 base_image=source_image,
-                target_image=target_image,
                 config=personal.config,
             )
-            rows.append(("personal image", build_ok, build_detail))
+            if current:
+                rows.append(("personal image", True, current_detail))
+            else:
+                build_ok, build_detail = build_personal_image(
+                    base_image=source_image,
+                    target_image=target_image,
+                    config=personal.config,
+                )
+                rows.append(("personal image", build_ok, build_detail))
 
     # Proceed with skill installs even if deps failed — users should see the
     # full state in one shot, not dep errors only.
-    for name in MANAGED_SKILLS:
-        sok, sdetail = _install_skill(name, force=force)
-        rows.append((f"skill: {name}", sok, sdetail))
+    skill_agents = tuple(
+        profile
+        for profile in agent_profiles_for(personal.config.agents.installed)
+        if profile.managed_skill_dir is not None
+    )
+    if skill_agents:
+        for name in MANAGED_SKILLS:
+            sok, sdetail = _install_skill(name, force=force)
+            rows.append((f"skill: {name}", sok, sdetail))
+            if sok:
+                for profile in skill_agents:
+                    lok, ldetail = _link_skill_for_agent(profile, name)
+                    rows.append((f"skill link: {profile.kind}/{name}", lok, ldetail))
 
     any_failed = False
     for label, row_ok, detail in rows:

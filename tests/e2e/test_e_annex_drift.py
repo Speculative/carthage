@@ -1,9 +1,7 @@
 """E2E Test E — `carthage up` warns when annex templates have drifted.
 
-The fixture is annexed under CLI 1.0.0 (per CONTRIBUTING: "Don't update the
-E2E fixture configs — they represent projects annexed at a specific past
-CLI version"). Running the CURRENT CLI against it should print the
-re-annex nudge.
+The fixture uses legacy `annexed_with_cli` template tracking. Running the
+current CLI against it should print the re-annex nudge.
 
 We assert on stdout text rather than parsing because the message is the
 user-facing surface — if the wording changes meaningfully, the test
@@ -29,8 +27,8 @@ def test_up_nudges_when_annexed_under_older_cli(
     assert r.returncode == 0, f"carthage up failed: {r.stderr}"
 
     out = r.stdout
-    assert "annexed under CLI 1.0.0" in out, (
-        f"expected re-annex nudge naming the old version, got:\n{out}"
+    assert "template legacy (1.0.0)" in out, (
+        f"expected re-annex nudge naming the legacy marker, got:\n{out}"
     )
     assert "/carthage-annex --upgrade" in out, (
         f"expected nudge to mention the upgrade command, got:\n{out}"
@@ -48,8 +46,8 @@ def test_status_flags_outdated_annex(
     assert r.returncode == 0, f"carthage status failed: {r.stderr}"
 
     out = r.stdout
-    assert "annexed under" in out, f"expected 'annexed under' row, got:\n{out}"
-    assert "/carthage-annex --upgrade" in out, (
+    assert "template" in out, f"expected 'template' row, got:\n{out}"
+    assert "/carthage-annex" in out and "--upgrade" in out, (
         f"expected status to flag the drift with an upgrade hint, got:\n{out}"
     )
 
@@ -65,6 +63,6 @@ def test_survey_check_fails_for_outdated_annex(
     assert "project annex templates are up to date" in r.stdout, (
         f"expected the new survey check, got:\n{r.stdout}"
     )
-    assert "annexed under CLI 1.0.0" in r.stdout, (
-        f"expected the failed-check detail to name the old version, got:\n{r.stdout}"
+    assert "no `template_version` field" in r.stdout, (
+        f"expected the failed-check detail to name the legacy marker, got:\n{r.stdout}"
     )

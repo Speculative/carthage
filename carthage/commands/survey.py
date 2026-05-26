@@ -1,25 +1,24 @@
-"""`carthage survey` — deep diagnostic, including version-alignment checks.
+"""`carthage survey` — install diagnostic, including version-alignment checks.
 
 Split from `status`: status is for "is the current project running?"
 (fast, runs all the time), survey is for "is my install healthy?" (slow,
-runs occasionally — pulls images, may spin up test containers).
+runs occasionally — pulls images).
 
 Survey reports; it never fixes. The user runs `carthage fortify` if skills
-drift, `/carthage-migrate` if config schemas drift, edits the Dockerfile
-themselves if the base image major moved.
+drift and edits project files themselves if config schemas or base image
+majors move.
 
 Checks performed:
   - docker CLI + daemon reachable
   - `docker compose` v2 plugin works
-  - host ~/.claude exists and is readable
+  - configured agent auth directories exist and are readable
   - host UID/GID sensible (not root)
   - installed skill versions match the CLI version
   - (if inside a project) base image pullable
   - (if inside a project) config schema is readable by this CLI
-  - (if inside a project) annex templates match current CLI version
+  - (if inside a project) annex templates match current template version
   - (if inside a project) base image major in Dockerfile still supported
   - (if inside a project, container running) base image version current
-  - (if --deep) spins up a test container, probes Claude auth
 """
 
 from __future__ import annotations
@@ -37,15 +36,21 @@ from rich.console import Console
 
 from carthage import (
     BASE_IMAGE_REPO,
-    CURRENT_CONFIG_SCHEMA,
+    CURRENT_PROJECT_SCHEMA_VERSION,
+    CURRENT_TEMPLATE_VERSION,
     EXPECTED_BASE_IMAGE_TAG,
     PERSONAL_BASE_IMAGE_REPO,
     __version__,
     annex_template_is_outdated,
 )
 from carthage import image as carthage_image
+from carthage.agents import AgentProfile, agent_profiles_for
 from carthage.config import ConfigError, load_config
-from carthage.personal_config import describe_personal_config, load_personal_config
+from carthage.personal_config import (
+    PersonalConfigResult,
+    describe_personal_config,
+    load_personal_config,
+)
 from carthage.skills import MANAGED_SKILLS, read_skill_version
 
 console = Console()
@@ -93,14 +98,39 @@ def check_compose_v2() -> tuple[bool, str]:
     return True, r.stdout.strip().splitlines()[0] if r.stdout.strip() else "ok"
 
 
-@_check("host ~/.claude exists and is readable")
-def check_claude_dir() -> tuple[bool, str]:
-    p = Path.home() / ".claude"
-    if not p.exists():
-        return False, f"{p} does not exist. Run `claude` on the host once to authenticate."
-    if not os.access(p, os.R_OK):
-        return False, f"{p} exists but is not readable"
-    return True, str(p)
+def _check_readable_dir(path: Path, login_hint: str) -> tuple[bool, str]:
+    if not path.exists():
+        return False, f"{path} does not exist. {login_hint}"
+    if not os.access(path, os.R_OK):
+        return False, f"{path} exists but is not readable"
+    return True, str(path)
+
+
+def _agent_auth_dir(profile: AgentProfile) -> tuple[Path, str] | None:
+    if profile.auth_check_path is None:
+        return None
+    path = Path(profile.auth_check_path).expanduser()
+    hint = (
+        profile.auth_login_hint
+        or f"Run `{profile.binary}` on the host to authenticate."
+    )
+    return path, hint
+
+
+def check_agent_auth_dirs(personal: PersonalConfigResult) -> list[CheckResult]:
+    results: list[CheckResult] = []
+    for profile in agent_profiles_for(personal.config.agents.installed):
+        auth = _agent_auth_dir(profile)
+        if auth is None:
+            continue
+        path, hint = auth
+        ok, detail = _check_readable_dir(path, hint)
+        results.append(CheckResult(f"{profile.kind} auth dir", ok, detail))
+    if not results:
+        results.append(
+            CheckResult("agent auth dirs", True, "no installed agents configured")
+        )
+    return results
 
 
 @_check("host UID/GID are sensible")
@@ -109,12 +139,6 @@ def check_uid_gid() -> tuple[bool, str]:
     if uid == 0:
         return False, "you are running as root (UID 0). Carthage expects a regular user."
     return True, f"uid={uid} gid={gid}"
-
-
-@_check("personal config")
-def check_personal_config() -> tuple[bool, str]:
-    result = load_personal_config()
-    return True, describe_personal_config(result)
 
 
 @_check("installed skills match CLI version")
@@ -168,30 +192,26 @@ def check_base_image_pullable(image_ref: str) -> tuple[bool, str]:
 def check_config_schema(cfg) -> tuple[bool, str]:
     if cfg.schema_is_outdated:
         return True, (
-            f"schema '{cfg.version}' is older than current '{CURRENT_CONFIG_SCHEMA}' "
-            "but still readable. Run `/carthage-migrate` to upgrade."
+            f"schema {cfg.schema_version} is older than current "
+            f"{CURRENT_PROJECT_SCHEMA_VERSION} but still readable."
         )
-    return True, f"schema '{cfg.version}' (current)"
+    return True, f"schema {cfg.schema_version} (current)"
 
 
 @_check("project annex templates are up to date")
 def check_annex_template_current(cfg) -> tuple[bool, str]:
-    """Compare the project's `annexed_with_cli` against the running CLI's
-    own version. Older-by-minor-or-major means the annex skill's templates
-    have likely changed underneath this project; user should re-annex to
-    pick up the diff. Patch-only drift returns OK by policy (CONTRIBUTING
-    "Versioning policy" — patch releases don't ship template changes)."""
-    if cfg.annexed_with_cli is None:
+    """Compare the project's template version with the bundled templates."""
+    if cfg.template_version is None:
         return False, (
-            f"no `annexed_with_cli` field — pre-1.0 config; CLI is {__version__}. "
+            "no `template_version` field — legacy annex config. "
             "Run /carthage-annex --upgrade."
         )
-    if annex_template_is_outdated(cfg.annexed_with_cli):
+    if annex_template_is_outdated(cfg.template_version):
         return False, (
-            f"annexed under CLI {cfg.annexed_with_cli}, current is {__version__}. "
+            f"template {cfg.template_version}, current is {CURRENT_TEMPLATE_VERSION}. "
             "Run /carthage-annex --upgrade to pick up template improvements."
         )
-    return True, f"annexed under CLI {cfg.annexed_with_cli} (matches current)"
+    return True, f"template {cfg.template_version} (matches current)"
 
 
 @_check("running container's base image is current")
@@ -254,36 +274,14 @@ def check_dockerfile_base(cfg) -> tuple[bool, str]:
     return True, f"{from_ref} (non-standard; skipped check)"
 
 
-@_check("claude CLI auth (deep)")
-def check_claude_auth_deep(image_ref: str) -> tuple[bool, str]:
-    home = Path.home()
-    r = subprocess.run(
-        [
-            "docker", "run", "--rm",
-            "-v", f"{home}/.claude:/home/carthage/.claude",
-            "-e", "CARTHAGE=1",
-            image_ref,
-            "timeout", "30", "claude", "--print", "reply with exactly: OK",
-        ],
-        capture_output=True, text=True,
-    )
-    if r.returncode != 0:
-        tail = (r.stderr.strip() or r.stdout.strip()).splitlines()
-        return False, tail[-1][:300] if tail else f"exit {r.returncode}"
-    if not r.stdout.strip():
-        return False, "claude returned empty — likely not authenticated"
-    return True, f"claude responded ({len(r.stdout.strip())} chars)"
-
-
 def _default_base_image() -> str:
     return f"{BASE_IMAGE_REPO}:{EXPECTED_BASE_IMAGE_TAG}"
 
 
 @click.command()
-@click.option("--deep", is_flag=True, help="Pull the base image and probe Claude auth.")
 @click.option("--base-image", default=None, help="Override the base image ref.")
-def survey(deep: bool, base_image: str | None) -> None:
-    """Deep diagnostic: tool versions, skill alignment, (optional) live probes."""
+def survey(base_image: str | None) -> None:
+    """Diagnostic: tool versions, skill alignment, and image freshness."""
     # Try to pick up project config if we're inside one.
     cfg = None
     try:
@@ -294,6 +292,7 @@ def survey(deep: bool, base_image: str | None) -> None:
     if base_image is None:
         base_image = cfg.base_image if cfg else _default_base_image()
 
+    personal = load_personal_config()
     results: list[CheckResult] = [
         check_docker_present(),
         check_docker_daemon(),
@@ -301,8 +300,8 @@ def survey(deep: bool, base_image: str | None) -> None:
     docker_up = results[0].ok and results[1].ok
     if docker_up:
         results.append(check_compose_v2())
-    results.append(check_claude_dir())
-    results.append(check_personal_config())
+    results.append(CheckResult("personal config", True, describe_personal_config(personal)))
+    results.extend(check_agent_auth_dirs(personal))
     results.append(check_uid_gid())
     results.append(check_skill_versions())
 
@@ -315,12 +314,6 @@ def survey(deep: bool, base_image: str | None) -> None:
 
     if docker_up:
         results.append(check_base_image_pullable(base_image))
-        if deep and results[-1].ok:
-            results.append(check_claude_auth_deep(base_image))
-        elif deep:
-            console.print(
-                "[yellow]skipping deep claude-auth check — base image not available.[/yellow]"
-            )
 
     any_failed = False
     for r in results:

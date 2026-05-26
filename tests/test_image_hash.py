@@ -44,7 +44,7 @@ def test_case_insensitive():
 
 
 def test_parse_base_image():
-    assert parse_base_image("FROM carthage-base-personal:v1\n") == "carthage-base-personal:v1"
+    assert parse_base_image("FROM carthage-base-personal:v2\n") == "carthage-base-personal:v2"
 
 
 def test_parse_base_image_is_case_insensitive():
