@@ -137,7 +137,8 @@ def up(force_rebuild: bool, offline: bool, no_host_ports: bool, port_overrides: 
             "using local cache."
         )
     else:
-        ok, detail = image.pull_base_image(cfg.base_image)
+        with console.status(f"pulling {cfg.base_image}…"):
+            ok, detail = image.pull_base_image(cfg.base_image)
         if not ok:
             console.print(
                 f"[yellow]note:[/yellow] could not refresh {cfg.base_image} ({detail}); "
@@ -169,12 +170,12 @@ def up(force_rebuild: bool, offline: bool, no_host_ports: bool, port_overrides: 
                 "run `carthage fortify` while online first"
             )
     else:
-        console.print(f"[cyan]refreshing[/cyan] {personal_ref} ({current_detail})…")
-        ok, detail = build_personal_image(
-            base_image=cfg.base_image,
-            target_image=personal_ref,
-            config=personal.config,
-        )
+        with console.status(f"rebuilding personal image ({current_detail})…"):
+            ok, detail = build_personal_image(
+                base_image=cfg.base_image,
+                target_image=personal_ref,
+                config=personal.config,
+            )
     if not ok:
         console.print(
             f"[red]personal image build failed:[/red] {detail}. "

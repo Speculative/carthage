@@ -251,7 +251,8 @@ def fortify(force: bool) -> None:
     if ok and agent_config_ok:
         source_image = f"{BASE_IMAGE_REPO}:{EXPECTED_BASE_IMAGE_TAG}"
         target_image = personal_image_ref(EXPECTED_BASE_IMAGE_TAG)
-        pull_ok, pull_detail = base_image.pull_base_image(source_image)
+        with console.status(f"pulling {source_image}…"):
+            pull_ok, pull_detail = base_image.pull_base_image(source_image)
         if not pull_ok:
             rows.append(("base image refresh", False, pull_detail))
         else:
@@ -264,11 +265,12 @@ def fortify(force: bool) -> None:
             if current:
                 rows.append(("personal image", True, current_detail))
             else:
-                build_ok, build_detail = build_personal_image(
-                    base_image=source_image,
-                    target_image=target_image,
-                    config=personal.config,
-                )
+                with console.status("building personal image…"):
+                    build_ok, build_detail = build_personal_image(
+                        base_image=source_image,
+                        target_image=target_image,
+                        config=personal.config,
+                    )
                 rows.append(("personal image", build_ok, build_detail))
 
     # Proceed with skill installs even if deps failed — users should see the

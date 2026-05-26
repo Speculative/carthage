@@ -40,8 +40,8 @@ def build(no_cache: bool, pull: bool) -> None:
         sys.exit(2)
 
     if pull:
-        console.print(f"[cyan]refreshing[/cyan] {cfg.base_image}…")
-        ok, detail = image.pull_base_image(cfg.base_image)
+        with console.status(f"pulling {cfg.base_image}…"):
+            ok, detail = image.pull_base_image(cfg.base_image)
         if not ok:
             console.print(f"[red]base image refresh failed:[/red] {detail}")
             sys.exit(1)
@@ -53,12 +53,12 @@ def build(no_cache: bool, pull: bool) -> None:
         except AgentConfigError as exc:
             console.print(f"[red]error:[/red] {exc}")
             sys.exit(2)
-        console.print(f"[cyan]rebuilding[/cyan] {from_ref}…")
-        ok, detail = build_personal_image(
-            base_image=cfg.base_image,
-            target_image=from_ref,
-            config=personal.config,
-        )
+        with console.status(f"rebuilding personal image…"):
+            ok, detail = build_personal_image(
+                base_image=cfg.base_image,
+                target_image=from_ref,
+                config=personal.config,
+            )
         if not ok:
             console.print(f"[red]personal image build failed:[/red] {detail}")
             sys.exit(1)
