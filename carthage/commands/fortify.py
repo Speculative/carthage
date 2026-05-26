@@ -29,7 +29,9 @@ from carthage.agents import (
     AgentProfile,
     agent_profiles_for,
     require_agent_profile,
+    supported_agent_kinds,
 )
+from carthage.commands.agent import _set_agents_table
 from carthage.personal_config import describe_personal_config, load_personal_config
 from carthage.personal_image import (
     build_personal_image,
@@ -213,9 +215,33 @@ def fortify(force: bool) -> None:
     try:
         require_agent_profile(personal.config.agents.default)
         agent_config_ok = True
-    except AgentConfigError as exc:
-        rows.append(("default agent", False, str(exc)))
-        agent_config_ok = False
+    except AgentConfigError:
+        kinds = supported_agent_kinds()
+        console.print(
+            "\n[yellow]No default agent configured.[/yellow] "
+            "Which agent would you like to use?\n"
+            + "\n".join(f"  {i + 1}. {k}" for i, k in enumerate(kinds))
+        )
+        choice = click.prompt(
+            "Agent",
+            type=click.Choice(list(kinds), case_sensitive=False),
+            default=kinds[0],
+        )
+        path = personal.path
+        try:
+            text = path.read_text() if path.exists() else ""
+            path.parent.mkdir(parents=True, exist_ok=True)
+            installed = list(personal.config.agents.installed)
+            if choice not in installed:
+                installed.insert(0, choice)
+            path.write_text(_set_agents_table(text, installed=installed, default=choice))
+        except OSError as exc:
+            rows.append(("default agent", False, f"failed to write config: {exc}"))
+            agent_config_ok = False
+        else:
+            personal = load_personal_config()
+            rows.append(("default agent", True, f"configured: {choice}"))
+            agent_config_ok = True
 
     if agent_config_ok:
         for profile in agent_profiles_for(personal.config.agents.installed):
