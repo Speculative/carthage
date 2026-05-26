@@ -224,19 +224,14 @@ def _parse_mounts(raw: object, config_path: Path) -> tuple[tuple[PersonalMount, 
         target = _string_field(item, "target")
         mode = _string_field(item, "mode")
         missing = [
-            name for name, value in (
-                ("id", item_id),
-                ("source", source),
-                ("target", target),
-                ("mode", mode),
-            )
+            name for name, value in (("source", source), ("target", target), ("mode", mode))
             if value is None
         ]
         if missing:
             warnings.append(f"{label} missing required field(s): {', '.join(missing)}; skipping")
             continue
-        assert item_id is not None and source is not None and target is not None and mode is not None
-        if item_id in seen:
+        assert source is not None and target is not None and mode is not None
+        if item_id is not None and item_id in seen:
             warnings.append(f"{label} id {item_id!r} is duplicated; skipping")
             continue
         if mode not in {"ro", "rw"}:
@@ -249,7 +244,8 @@ def _parse_mounts(raw: object, config_path: Path) -> tuple[tuple[PersonalMount, 
         if not target.startswith("/"):
             warnings.append(f"{label} target must be an absolute container path; skipping")
             continue
-        seen.add(item_id)
+        if item_id is not None:
+            seen.add(item_id)
         mounts.append(PersonalMount(item_id, expanded_source, target, mode))
     return tuple(mounts), warnings
 

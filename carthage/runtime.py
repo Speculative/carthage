@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class RuntimeMount:
-    id: str
+    id: str | None
     source: str
     target: str
     mode: str
