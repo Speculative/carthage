@@ -20,7 +20,7 @@ import click
 from rich.console import Console
 
 from carthage import CURRENT_TEMPLATE_VERSION, annex_template_is_outdated, compose, image, ports
-from carthage.agents import AgentConfigError, agent_profiles_for, require_agent_profile
+from carthage.agents import AgentConfigError, agent_profiles_for, require_agent_profile, supported_agent_kinds
 from carthage.config import CarthageConfig, ConfigError, load_config
 from carthage.personal_config import PersonalConfigResult, load_personal_config
 from carthage.personal_image import (
@@ -61,7 +61,17 @@ console = Console()
         "Explicit only — we never silently remap."
     ),
 )
-def up(force_rebuild: bool, offline: bool, no_host_ports: bool, port_overrides: tuple[str, ...]) -> None:
+@click.option(
+    "--agent",
+    "agent_override",
+    default=None,
+    metavar="KIND",
+    help=(
+        "Launch with this agent instead of the personal default. "
+        "Must be in your installed-agent list."
+    ),
+)
+def up(force_rebuild: bool, offline: bool, no_host_ports: bool, port_overrides: tuple[str, ...], agent_override: str | None) -> None:
     """Start the project container (rebuild first if out of date)."""
     try:
         cfg = load_config()
@@ -93,8 +103,21 @@ def up(force_rebuild: bool, offline: bool, no_host_ports: bool, port_overrides: 
     personal = load_personal_config()
     for warning in personal.warnings:
         console.print(f"[yellow]note:[/yellow] personal config: {warning}")
+    if agent_override is not None:
+        if agent_override not in supported_agent_kinds():
+            console.print(
+                f"[red]error:[/red] unsupported agent {agent_override!r}. "
+                f"Supported: {', '.join(supported_agent_kinds())}"
+            )
+            sys.exit(2)
+        if agent_override not in personal.config.agents.installed:
+            console.print(
+                f"[red]error:[/red] agent {agent_override!r} is not in your installed-agent list. "
+                f"Run `carthage agent use {agent_override}` and `carthage fortify` first."
+            )
+            sys.exit(2)
     try:
-        require_agent_profile(personal.config.agents.default)
+        require_agent_profile(agent_override or personal.config.agents.default)
     except AgentConfigError as exc:
         console.print(f"[red]error:[/red] {exc}")
         sys.exit(2)
@@ -188,12 +211,12 @@ def up(force_rebuild: bool, offline: bool, no_host_ports: bool, port_overrides: 
     # have been resolvable. (It doesn't strictly need it to exist yet, but
     # putting the check here keeps the "cheap checks first, expensive work
     # later" flow intact for most reruns.)
-    compose_args, cleanup = _build_compose_args(cfg, no_host_ports, overrides, personal)
+    compose_args, cleanup = _build_compose_args(cfg, no_host_ports, overrides, personal, agent_override)
     try:
         _check_port_collisions(
             cfg,
             compose_args,
-            invocation_flags=_reconstruct_flags(force_rebuild, offline, no_host_ports, overrides),
+            invocation_flags=_reconstruct_flags(force_rebuild, offline, no_host_ports, overrides, agent_override),
             user_overrides=overrides,
         )
     except subprocess.CalledProcessError:
@@ -266,6 +289,7 @@ def _build_compose_args(
     no_host_ports: bool,
     overrides: list[tuple[int, int]],
     personal: PersonalConfigResult | None = None,
+    agent_override: str | None = None,
 ) -> tuple[list[str], callable]:
     """Return (extra compose args, cleanup fn).
 
@@ -279,7 +303,7 @@ def _build_compose_args(
     rewriting the full ports list under `!override` because compose's default
     list-merge would otherwise produce duplicates.
     """
-    runtime_content = _personal_compose_override_content(cfg, personal)
+    runtime_content = _personal_compose_override_content(cfg, personal, agent_override)
     port_content = _port_compose_override_content(cfg, no_host_ports, overrides)
     if runtime_content is None and port_content is None:
         return [], lambda: None
@@ -313,6 +337,7 @@ def _build_compose_args(
 def _personal_compose_override_content(
     cfg: CarthageConfig,
     personal: PersonalConfigResult | None,
+    agent_override: str | None = None,
 ) -> str | None:
     if personal is None:
         return None
@@ -323,7 +348,7 @@ def _personal_compose_override_content(
         for profile in agent_profiles_for(personal.config.agents.installed)
     )
     agent_launch_overlay = require_agent_profile(
-        personal.config.agents.default
+        agent_override or personal.config.agents.default
     ).runtime_overlay(include_mounts=False, launch=True)
     personal_overlay = filter_disabled_overlay(personal.config.runtime_overlay, disabled)
     overlay = merge_overlays(
@@ -398,6 +423,7 @@ def _reconstruct_flags(
     offline: bool,
     no_host_ports: bool,
     overrides: list[tuple[int, int]],
+    agent_override: str | None = None,
 ) -> list[str]:
     """Render the user's invocation flags back to a list of CLI tokens, so we
     can echo them in error suggestions verbatim."""
@@ -410,6 +436,8 @@ def _reconstruct_flags(
         flags.append("--no-host-ports")
     for host, container in overrides:
         flags.extend(["--port", f"{host}:{container}"])
+    if agent_override is not None:
+        flags.extend(["--agent", agent_override])
     return flags
 
 
