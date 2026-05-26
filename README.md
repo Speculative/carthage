@@ -38,7 +38,7 @@ carthage attach   # drops you into a tmux session with the configured agent runn
 
 | Command | What it does |
 |---|---|
-| `carthage fortify` | One-time host setup. Checks deps, installs personal skills, builds `carthage-base-personal`. Also run after upgrading the CLI or changing personal image config. |
+| `carthage fortify` | One-time host setup. Prompts for agent selection if none is configured, checks deps, installs personal skills, builds `carthage-base-personal`. Also run after upgrading the CLI or changing personal image config. |
 | `carthage up` | Start the container. Rebuilds first if the image is stale. Refuses to start on host-port collisions with other Carthage projects. |
 | `carthage up --no-host-ports` | Start the container with all host bindings stripped (internal-only). |
 | `carthage up --port H:C` | Start with an extra one-off host binding. Explicit, repeatable. |
@@ -123,8 +123,9 @@ Minimal file:
 schema_version = 1
 ```
 
-Personal mounts and environment variables use stable IDs so individual projects
-can opt out:
+Personal mounts and environment variables accept an optional `id` field. Set one
+if you want a project to be able to opt out of a specific entry via
+`[personal].disable`:
 
 ```toml
 [carthage]

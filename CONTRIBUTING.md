@@ -10,7 +10,7 @@ Carthage ships three things from this one repo:
 2. **The Carthage skills** under [skill/](skill/) — bundled *into the CLI wheel* via [`tool.hatch.build.targets.wheel.force-include`](pyproject.toml).
 3. **The `carthage-base` Docker image** — built from [base/](base/), published to GHCR by [.github/workflows/publish-base.yml](.github/workflows/publish-base.yml) on every `v*.*.*` git tag push. Users normally build a local `carthage-base-personal:<major>` layer on top with `carthage fortify`.
 
-The CLI and the skills share one version because they're physically the same wheel. The base image is published from the same commit but is consumed independently. New projects normally inherit from `carthage-base-personal:v2`; existing older projects may still inherit directly from `ghcr.io/speculative/carthage-base:v1`.
+The CLI and the skills share one version because they're physically the same wheel. The base image is published from the same commit but is consumed independently. New projects inherit from `carthage-base-personal:v2`; pre-2.0 projects may still inherit directly from `ghcr.io/speculative/carthage-base:v1`.
 
 ## The trap: skill-template changes ARE CLI changes
 
