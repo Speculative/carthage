@@ -11,7 +11,7 @@ TOML schemas and annex templates have separate integer versions because they
 move independently. Old projects never auto-upgrade.
 """
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 
 # The project `.carthage/config.toml` schema version the CLI currently writes.
 CURRENT_PROJECT_SCHEMA_VERSION = 1
