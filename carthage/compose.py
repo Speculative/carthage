@@ -89,9 +89,24 @@ def exec_interactive(
     env_overrides: dict[str, str] | None = None,
 ) -> int:
     """`docker compose exec -it <service> <command>`. Hands the terminal to
-    the container (tmux wants a real tty)."""
+    the container (tmux wants a real tty).
+
+    Docker Compose otherwise supplies ``TERM=xterm`` to the exec process.
+    Preserve the host terminal identity so tmux can load its matching
+    terminfo entry and negotiate the correct color capabilities.
+    """
     base, _ = _docker_compose_base(cfg, [])
-    cmd = base + ["exec", service, *command]
+    terminal_env = {
+        name: value
+        for name in ("TERM", "COLORTERM")
+        if (value := os.environ.get(name)) is not None
+    }
+    terminal_args = [
+        option
+        for name, value in terminal_env.items()
+        for option in ("--env", f"{name}={value}")
+    ]
+    cmd = base + ["exec", *terminal_args, service, *command]
     env = compose_env(cfg)
     if env_overrides:
         env.update(env_overrides)
