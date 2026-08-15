@@ -2,6 +2,7 @@ from carthage.personal_config import PersonalAgents, PersonalConfig, PersonalIma
 from carthage.personal_image import (
     PERSONAL_IMAGE_HASH_LABEL,
     PersonalImageRequiredError,
+    build_personal_image,
     personal_image_is_current,
     personal_image_hash,
     personal_image_ref,
@@ -185,6 +186,55 @@ def test_read_personal_image_hash_handles_missing_image(monkeypatch):
     monkeypatch.setattr("carthage.personal_image.subprocess.run", fake_run)
 
     assert read_personal_image_hash("missing:v1") is None
+
+
+def test_build_personal_image_uses_docker_cache_by_default(monkeypatch):
+    import subprocess
+
+    calls = []
+
+    def fake_run(args, **kwargs):
+        calls.append((args, kwargs))
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    monkeypatch.setattr("carthage.personal_image.subprocess.run", fake_run)
+
+    ok, detail = build_personal_image(
+        base_image="base:v2",
+        target_image="personal:v2",
+        config=PersonalConfig(),
+    )
+
+    assert ok is True
+    assert detail == "personal:v2"
+    args, kwargs = calls[0]
+    assert args[:5] == ["docker", "build", "-t", "personal:v2", "-f"]
+    assert "--no-cache" not in args
+    assert kwargs["capture_output"] is True
+    assert kwargs["text"] is True
+
+
+def test_build_personal_image_can_disable_docker_cache(monkeypatch):
+    import subprocess
+
+    calls = []
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    monkeypatch.setattr("carthage.personal_image.subprocess.run", fake_run)
+
+    ok, detail = build_personal_image(
+        base_image="base:v2",
+        target_image="personal:v2",
+        config=PersonalConfig(),
+        no_cache=True,
+    )
+
+    assert ok is True
+    assert detail == "personal:v2"
+    assert "--no-cache" in calls[0]
 
 
 def test_require_project_personal_image_accepts_expected_from(tmp_path):

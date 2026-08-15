@@ -149,12 +149,17 @@ def build_personal_image(
     base_image: str,
     target_image: str,
     config: PersonalConfig,
+    no_cache: bool = False,
 ) -> tuple[bool, str]:
     with tempfile.TemporaryDirectory(prefix="carthage-personal-image-") as tmp:
         dockerfile = Path(tmp) / "Dockerfile"
         dockerfile.write_text(render_personal_image_dockerfile(base_image, config))
+        args = ["docker", "build", "-t", target_image, "-f", str(dockerfile)]
+        if no_cache:
+            args.append("--no-cache")
+        args.append(tmp)
         result = subprocess.run(
-            ["docker", "build", "-t", target_image, "-f", str(dockerfile), tmp],
+            args,
             capture_output=True,
             text=True,
         )

@@ -197,7 +197,12 @@ def _link_skill_for_agent(profile: AgentProfile, name: str) -> tuple[bool, str]:
     is_flag=True,
     help="Reinstall skills even if the installed version already matches.",
 )
-def fortify(force: bool) -> None:
+@click.option(
+    "--rebuild-personal",
+    is_flag=True,
+    help="Rebuild the personal base image even if it appears current. Implies Docker --no-cache.",
+)
+def fortify(force: bool, rebuild_personal: bool) -> None:
     """One-time host setup: verify deps, install personal Carthage skills."""
     SKILLS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -262,14 +267,16 @@ def fortify(force: bool) -> None:
                 base_image=source_image,
                 config=personal.config,
             )
-            if current:
+            if current and not rebuild_personal:
                 rows.append(("personal image", True, current_detail))
             else:
-                with console.status("building personal image…"):
+                reason = "forced rebuild" if rebuild_personal else current_detail
+                with console.status(f"building personal image ({reason})…"):
                     build_ok, build_detail = build_personal_image(
                         base_image=source_image,
                         target_image=target_image,
                         config=personal.config,
+                        no_cache=rebuild_personal,
                     )
                 rows.append(("personal image", build_ok, build_detail))
 
