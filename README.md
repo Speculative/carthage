@@ -50,7 +50,7 @@ carthage attach   # drops you into a tmux session with the configured agent runn
 | `carthage build` | Force a rebuild. Pass `--no-cache` to skip the layer cache. |
 | `carthage status` | Quick runtime state for the current project. |
 | `carthage status --all` | Table of every running Carthage container across projects (reads Docker labels; no registry file). |
-| `carthage survey` | Diagnostic: deps, skill version alignment, config schema, Dockerfile `FROM`, and configured agent auth directories. |
+| `carthage survey` | Diagnostic: deps, skill version alignment, config schema, Dockerfile `FROM`, and configured agent credentials. |
 | `carthage --version` | CLI version + installed skill versions + expected base image. |
 
 ## Security model
@@ -61,7 +61,7 @@ carthage attach   # drops you into a tmux session with the configured agent runn
 - **Narrow Linux capabilities.** `cap_drop: [ALL]` then `cap_add: [CHOWN, SETUID, SETGID, DAC_OVERRIDE]`. No `SYS_ADMIN`, no `NET_ADMIN`, no `SYS_PTRACE`. Projects that need `SYS_PTRACE` (gdb/strace/perf) opt in during annex; the annex skill asks.
 - **`no-new-privileges`.** Setuid binaries can't gain privilege. No `sudo` is installed.
 - **No Docker socket.** `/var/run/docker.sock` is never mounted. The container can't start sibling containers or escape via the daemon.
-- **Tight mount scoping.** Only `/workspace` (rw), configured agent auth directories (rw), a read-only `~/.gitconfig`, and `~/.carthage/state/<slug>/` (rw — per-project shell history etc., scoped by slug). Nothing else from the host is visible unless personal config or the project annex explicitly adds it.
+- **Tight mount scoping.** Only `/workspace` (rw), the agent credential files needed for the selected CLIs, a read-only `~/.gitconfig`, and `~/.carthage/state/<slug>/` (rw — per-project shell and agent-session state). Nothing else from the host is visible unless personal config or the project annex explicitly adds it.
 - **`pids_limit: 1000`.** Catches fork bombs; generous for parallel builds and test runners.
 - **Memory and CPU limits.** The CLI resolves `~75%` of host RAM and `hostcpus - 1` at `carthage up` time. Prevents runaway processes (large builds, local LLMs) from OOMing the host. Set to `0` (no limit) if detection fails (e.g., on macOS the mem check reads `/proc/meminfo`).
 - **Default Docker seccomp stays on.** No `seccomp=unconfined`. No `privileged: true`. Ever.
@@ -144,6 +144,8 @@ value = "vim"
 
 [image]
 apt_packages = ["fzf", "shellcheck"]
+# Source files produced by `infocmp -x <TERM>`; compiled into the personal image.
+terminfo_files = ["~/.carthage/terminfo/xterm-ghostty"]
 
 [agents]
 installed = ["claude", "codex"]
@@ -158,10 +160,12 @@ disable = ["notes"]
 ```
 
 `carthage fortify` builds a local `carthage-base-personal:v2` image from the
-published Carthage base and installs `[image].apt_packages` plus the configured
-`[agents].installed` agent CLIs into that personal layer. Newly annexed projects
+published Carthage base, installs `[image].apt_packages`, compiles
+`[image].terminfo_files`, and installs the configured `[agents].installed` agent
+CLIs into that personal layer. Newly annexed projects
 inherit from this local personal image. Re-run `carthage fortify` after changing
-`[image]` or adding a new installed agent.
+`[image]` or adding a new installed agent. Generate a Ghostty source file with
+`mkdir -p ~/.carthage/terminfo && infocmp -x xterm-ghostty > ~/.carthage/terminfo/xterm-ghostty`.
 
 The default launch agent is runtime config, so switching between already
 installed agents is quick:
@@ -180,7 +184,7 @@ trust.
 
 ## Troubleshooting
 
-`carthage survey` first — it catches the common issues (Docker not running, GHCR unreachable, configured agent auth directories missing, skill version drift).
+`carthage survey` first — it catches the common issues (Docker not running, GHCR unreachable, configured agent credential files missing, skill version drift).
 
 - **"port collision" on `carthage up`** — another Carthage project has the host port. `carthage status --all` tells you who. Options: stop that project, use `carthage up --no-host-ports` for internal-only access, or pick a different host port with `--port H:C`.
 - **The agent says "not authenticated" inside the container** — run the agent's login flow on the host once. The configured agent auth mount shares auth with the sandbox.

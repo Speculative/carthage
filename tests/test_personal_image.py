@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from carthage.personal_config import PersonalAgents, PersonalConfig, PersonalImage
 from carthage.personal_image import (
     PERSONAL_IMAGE_HASH_LABEL,
@@ -46,6 +48,17 @@ def test_render_personal_image_with_apt_packages():
     assert "      shellcheck \\\n && rm -rf /var/lib/apt/lists/*" in dockerfile
     assert "rm -rf /var/lib/apt/lists/*" in dockerfile
     assert "USER carthage" in dockerfile
+
+
+def test_render_personal_image_compiles_terminfo_sources():
+    dockerfile = render_personal_image_dockerfile(
+        "ghcr.io/speculative/carthage-base:v2",
+        PersonalConfig(image=PersonalImage(terminfo_files=("/tmp/xterm-ghostty",))),
+    )
+
+    assert "      ncurses-bin \\\n && rm -rf /var/lib/apt/lists/*" in dockerfile
+    assert "COPY terminfo/ /tmp/carthage-terminfo/" in dockerfile
+    assert 'tic -x -o /usr/share/terminfo "$source"' in dockerfile
 
 
 def test_render_personal_image_installs_codex_agent():
@@ -109,6 +122,18 @@ def test_personal_image_hash_tracks_image_affecting_config():
     assert different_default == base
     assert different_agent != base
     assert different_package != base
+
+
+def test_personal_image_hash_tracks_terminfo_source_contents(tmp_path):
+    source = tmp_path / "xterm-ghostty"
+    source.write_text("xterm-ghostty|first,\n\tcols#80,\n")
+    config = PersonalConfig(image=PersonalImage(terminfo_files=(str(source),)))
+
+    first = personal_image_hash(base_image="base:v2", config=config)
+    source.write_text("xterm-ghostty|second,\n\tcols#80,\n")
+    second = personal_image_hash(base_image="base:v2", config=config)
+
+    assert second != first
 
 
 def test_personal_image_hash_tracks_root_agent_install_commands(monkeypatch):
@@ -235,6 +260,32 @@ def test_build_personal_image_can_disable_docker_cache(monkeypatch):
     assert ok is True
     assert detail == "personal:v2"
     assert "--no-cache" in calls[0]
+
+
+def test_build_personal_image_stages_terminfo_source(tmp_path, monkeypatch):
+    import subprocess
+
+    source = tmp_path / "xterm-ghostty"
+    source.write_text("xterm-ghostty|Ghostty terminal,\n\tcols#80,\n")
+    staged = {}
+
+    def fake_run(args, **kwargs):
+        context = args[-1]
+        staged["source"] = (Path(context) / "terminfo" / "0").read_text()
+        staged["dockerfile"] = (Path(context) / "Dockerfile").read_text()
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    monkeypatch.setattr("carthage.personal_image.subprocess.run", fake_run)
+
+    ok, detail = build_personal_image(
+        base_image="base:v2",
+        target_image="personal:v2",
+        config=PersonalConfig(image=PersonalImage(terminfo_files=(str(source),))),
+    )
+
+    assert (ok, detail) == (True, "personal:v2")
+    assert staged["source"] == source.read_text()
+    assert "COPY terminfo/ /tmp/carthage-terminfo/" in staged["dockerfile"]
 
 
 def test_require_project_personal_image_accepts_expected_from(tmp_path):

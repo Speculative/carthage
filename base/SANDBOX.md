@@ -16,8 +16,9 @@ the rules of the sandbox so you don't waste effort working around them.
   containers or escape via the Docker daemon.
 - `pids_limit` and `mem_limit` / `cpus` caps are set on the container.
 - File mounts are scoped: `/workspace` (the project source tree),
-  configured agent auth/session directories such as `/home/carthage/.claude`
-  or `/home/carthage/.codex`, a read-only `/home/carthage/.gitconfig`, and
+  project-scoped agent state directories such as `/home/carthage/.claude`
+  or `/home/carthage/.codex` plus the selected agent's credential files, a
+  read-only `/home/carthage/.gitconfig`, and
   `/commandhistory` (per-project shell-state dir from
   `~/.carthage/state/<slug>/`). Nothing else from the host is visible unless
   the project or personal config explicitly adds it.
@@ -77,10 +78,11 @@ the rules of the sandbox so you don't waste effort working around them.
 
 - `/workspace` — the project's source tree (read/write). This is your
   working directory.
-- Agent auth/session directories — shared with the host according to the
-  user's personal Carthage config, so login state persists across container
-  rebuilds. Examples include `/home/carthage/.claude` and
-  `/home/carthage/.codex`.
+- Agent state directories — scoped to this Carthage project and persisted on
+  the host, so session history survives container rebuilds without being
+  shared with other projects. Examples include `/home/carthage/.claude` and
+  `/home/carthage/.codex`. The credential files nested inside them are shared
+  with the host so the agent remains logged in.
 - `/home/carthage/.gitconfig` — read-only, shared with the host.
 - `/commandhistory` — per-project state dir (read/write). Currently holds
   `.bash_history`; lives at `~/.carthage/state/<slug>/` on the host so

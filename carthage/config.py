@@ -99,11 +99,14 @@ class CarthageConfig:
     @property
     def host_state_dir(self) -> Path:
         """Per-project host-side state dir, bind-mounted into the container at
-        /commandhistory. Currently holds .bash_history; future state files
-        (zsh history, fzf history, etc.) live alongside it. Slug-keyed, so
-        two projects with the same slug share state — same caveat as the
-        compose project name."""
+        /commandhistory. It holds shell history and per-agent local state.
+        Slug-keyed, so two projects with the same slug share state — the same
+        caveat as the compose project name."""
         return Path.home() / ".carthage" / "state" / self.project_slug
+
+    def agent_state_dir(self, agent_kind: str) -> Path:
+        """Persistent local state for one agent in this project."""
+        return self.host_state_dir / "agents" / agent_kind
 
 
 def find_project_root(start: Path | None = None) -> Path:

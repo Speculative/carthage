@@ -34,6 +34,15 @@ def test_project_personal_disable_defaults_to_empty(tmp_path):
     assert cfg.legacy_annexed_with_cli is None
 
 
+def test_agent_state_dir_is_nested_under_project_state(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _write_project_config(tmp_path)
+
+    cfg = load_config(tmp_path)
+
+    assert cfg.agent_state_dir("codex") == tmp_path / ".carthage/state/demo/agents/codex"
+
+
 def test_legacy_project_version_fields_are_loaded(tmp_path):
     carthage_dir = tmp_path / ".carthage"
     carthage_dir.mkdir()

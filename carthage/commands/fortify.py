@@ -73,28 +73,12 @@ def _check_compose_v2() -> tuple[bool, str]:
     return True, first[0] if first else "ok"
 
 
-def _check_claude_dir() -> tuple[bool, str]:
-    p = Path.home() / ".claude"
-    if not p.is_dir():
-        return False, (
-            f"{p} does not exist. Run `claude` on the host once to authenticate "
-            "before using Carthage with Claude."
-        )
-    return True, str(p)
-
-
-def _check_codex_dir() -> tuple[bool, str]:
-    p = Path.home() / ".codex"
-    if not p.is_dir():
-        return False, f"{p} does not exist. Run `codex --login` on the host first."
-    return True, str(p)
-
-
 def _check_agent_auth(profile: AgentProfile) -> tuple[bool, str]:
-    if profile.kind == "claude":
-        return _check_claude_dir()
-    if profile.kind == "codex":
-        return _check_codex_dir()
+    if profile.auth_check_path is not None:
+        path = Path(profile.auth_check_path).expanduser()
+        if not path.is_file():
+            return False, f"{path} does not exist. {profile.auth_login_hint}"
+        return True, str(path)
     return True, "no host auth check defined"
 
 

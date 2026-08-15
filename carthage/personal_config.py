@@ -44,6 +44,7 @@ PersonalEnvironment = RuntimeEnv
 @dataclass(frozen=True)
 class PersonalImage:
     apt_packages: tuple[str, ...] = ()
+    terminfo_files: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -192,6 +193,8 @@ def describe_personal_config(result: PersonalConfigResult) -> str:
         counts.append(f"{len(result.config.environment)} env var(s)")
     if result.config.image.apt_packages:
         counts.append(f"{len(result.config.image.apt_packages)} apt package(s)")
+    if result.config.image.terminfo_files:
+        counts.append(f"{len(result.config.image.terminfo_files)} terminfo file(s)")
     if result.config.agents.default is not None or result.config.agents.installed:
         counts.append(
             "agents: "
@@ -330,6 +333,11 @@ def _parse_image(raw: object, config_path: Path) -> tuple[PersonalImage, list[st
         return PersonalImage(), [
             f"{config_path}: [image].apt_packages must be a list of strings; skipping"
         ]
+    terminfo_raw = raw.get("terminfo_files", [])
+    if not isinstance(terminfo_raw, list) or not all(isinstance(item, str) for item in terminfo_raw):
+        return PersonalImage(), [
+            f"{config_path}: [image].terminfo_files must be a list of strings; skipping"
+        ]
 
     packages: list[str] = []
     seen: set[str] = set()
@@ -348,7 +356,28 @@ def _parse_image(raw: object, config_path: Path) -> tuple[PersonalImage, list[st
         seen.add(package)
         packages.append(package)
 
-    return PersonalImage(apt_packages=tuple(packages)), warnings
+    terminfo_files: list[str] = []
+    seen_files: set[str] = set()
+    for source in terminfo_raw:
+        expanded_source = str(Path(source).expanduser())
+        if not Path(expanded_source).is_absolute():
+            warnings.append(
+                f"{config_path}: [image].terminfo_files entry {source!r} must be absolute "
+                "or start with '~'; skipping"
+            )
+            continue
+        if expanded_source in seen_files:
+            warnings.append(
+                f"{config_path}: [image].terminfo_files entry {source!r} is duplicated; skipping"
+            )
+            continue
+        seen_files.add(expanded_source)
+        terminfo_files.append(expanded_source)
+
+    return PersonalImage(
+        apt_packages=tuple(packages),
+        terminfo_files=tuple(terminfo_files),
+    ), warnings
 
 
 def _parse_agents(

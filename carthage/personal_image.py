@@ -61,9 +61,26 @@ def personal_image_hash(*, base_image: str, config: PersonalConfig) -> str:
             for profile in agent_profiles_for(config.agents.installed)
         ],
         "apt_packages": config.image.apt_packages,
+        "terminfo_files": _terminfo_file_fingerprints(config.image.terminfo_files),
     }
     raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(raw).hexdigest()[:16]
+
+
+def _terminfo_file_fingerprints(files: tuple[str, ...]) -> list[dict[str, str]]:
+    """Fingerprint sources so changing a local entry invalidates the image."""
+    fingerprints = []
+    for source in files:
+        path = Path(source)
+        try:
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        except OSError as exc:
+            # Let build_personal_image report the actionable error, while still
+            # invalidating an image made from a source that has since vanished.
+            fingerprints.append({"path": source, "error": str(exc)})
+        else:
+            fingerprints.append({"path": source, "sha256": digest})
+    return fingerprints
 
 
 def read_personal_image_hash(image_ref: str) -> str | None:
@@ -94,15 +111,27 @@ def render_personal_image_dockerfile(base_image: str, config: PersonalConfig) ->
         "",
         "USER root",
     ]
-    if config.image.apt_packages:
+    image_packages = list(config.image.apt_packages)
+    if config.image.terminfo_files and "ncurses-bin" not in image_packages:
+        image_packages.append("ncurses-bin")
+    if image_packages:
         lines.extend([
             "",
             "RUN apt-get update \\",
             " && apt-get install -y --no-install-recommends \\",
         ])
-        for package in config.image.apt_packages:
+        for package in image_packages:
             lines.append(f"      {package} \\")
         lines.append(" && rm -rf /var/lib/apt/lists/*")
+
+    if config.image.terminfo_files:
+        lines.extend([
+            "",
+            "# Personal terminal descriptions, compiled into the standard terminfo database.",
+            "COPY terminfo/ /tmp/carthage-terminfo/",
+            "RUN for source in /tmp/carthage-terminfo/*; do tic -x -o /usr/share/terminfo \"$source\"; done \\",
+            " && rm -rf /tmp/carthage-terminfo",
+        ])
 
     for profile in agent_profiles_for(config.agents.installed):
         if not profile.root_install_commands and not profile.install_commands:
@@ -152,6 +181,11 @@ def build_personal_image(
     no_cache: bool = False,
 ) -> tuple[bool, str]:
     with tempfile.TemporaryDirectory(prefix="carthage-personal-image-") as tmp:
+        context = Path(tmp)
+        try:
+            _copy_terminfo_files(context, config.image.terminfo_files)
+        except OSError as exc:
+            return False, f"could not stage terminfo source: {exc}"
         dockerfile = Path(tmp) / "Dockerfile"
         dockerfile.write_text(render_personal_image_dockerfile(base_image, config))
         args = ["docker", "build", "-t", target_image, "-f", str(dockerfile)]
@@ -167,3 +201,15 @@ def build_personal_image(
         tail = (result.stderr.strip() or result.stdout.strip()).splitlines()
         return False, tail[-1] if tail else f"docker build exited {result.returncode}"
     return True, target_image
+
+
+def _copy_terminfo_files(context: Path, files: tuple[str, ...]) -> None:
+    if not files:
+        return
+    destination = context / "terminfo"
+    destination.mkdir()
+    for index, source in enumerate(files):
+        path = Path(source)
+        if not path.is_file():
+            raise OSError(f"{path} is not a readable regular file")
+        (destination / str(index)).write_bytes(path.read_bytes())

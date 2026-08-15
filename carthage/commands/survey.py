@@ -11,7 +11,7 @@ majors move.
 Checks performed:
   - docker CLI + daemon reachable
   - `docker compose` v2 plugin works
-  - configured agent auth directories exist and are readable
+  - configured agent credential files exist and are readable
   - host UID/GID sensible (not root)
   - installed skill versions match the CLI version
   - (if inside a project) base image pullable
@@ -125,11 +125,9 @@ def check_agent_auth_dirs(personal: PersonalConfigResult) -> list[CheckResult]:
             continue
         path, hint = auth
         ok, detail = _check_readable_dir(path, hint)
-        results.append(CheckResult(f"{profile.kind} auth dir", ok, detail))
+        results.append(CheckResult(f"{profile.kind} auth", ok, detail))
     if not results:
-        results.append(
-            CheckResult("agent auth dirs", True, "no installed agents configured")
-        )
+        results.append(CheckResult("agent auth", True, "no installed agents configured"))
     return results
 
 

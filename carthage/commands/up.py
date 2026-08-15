@@ -228,6 +228,8 @@ def up(force_rebuild: bool, offline: bool, no_host_ports: bool, port_overrides: 
     # Must exist before `compose up` so docker doesn't auto-create the mount
     # path as a directory it owns (with root perms on Linux).
     cfg.host_state_dir.mkdir(parents=True, exist_ok=True)
+    for profile in agent_profiles_for(personal.config.agents.installed):
+        cfg.agent_state_dir(profile.kind).mkdir(parents=True, exist_ok=True)
 
     # --- Start ---
     env_overrides = _resolve_runtime_env(cfg, offline=offline)
@@ -345,7 +347,7 @@ def _personal_compose_override_content(
 
     disabled = set(cfg.personal_disabled)
     agent_mount_overlays = tuple(
-        profile.runtime_overlay()
+        profile.runtime_overlay(state_dir=cfg.agent_state_dir(profile.kind))
         for profile in agent_profiles_for(personal.config.agents.installed)
     )
     agent_launch_overlay = require_agent_profile(

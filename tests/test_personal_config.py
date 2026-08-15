@@ -261,6 +261,28 @@ apt_packages = ["ok-package", "bad/package", "ok-package"]
     assert "duplicated" in result.warnings[1]
 
 
+def test_terminfo_files_are_expanded_and_invalid_entries_are_skipped(tmp_path):
+    path = tmp_path / "config.toml"
+    source = tmp_path / "xterm-ghostty"
+    source.write_text("xterm-ghostty|Ghostty terminal,\n\tcols#80,\n")
+    path.write_text(
+        f"""
+[carthage]
+schema_version = 1
+
+[image]
+terminfo_files = ["{source}", "relative-entry", "{source}"]
+"""
+    )
+
+    result = load_personal_config(path)
+
+    assert result.config.image == PersonalImage(terminfo_files=(str(source),))
+    assert len(result.warnings) == 2
+    assert "must be absolute" in result.warnings[0]
+    assert "duplicated" in result.warnings[1]
+
+
 def test_legacy_agent_kind_is_accepted(tmp_path):
     path = tmp_path / "config.toml"
     path.write_text(

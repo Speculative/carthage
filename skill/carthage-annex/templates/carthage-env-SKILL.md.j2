@@ -12,9 +12,11 @@ that apply to this environment — scoped mounts, no sudo, commit workflow,
 agent permission-bypass guidance, and how to request additional services or
 system packages.
 
-Project source is mounted at `/workspace`. Agent auth/session state is
-mounted according to the user's personal Carthage agent config, not this
-project's compose file, so do not add agent-specific auth mounts to
+Project source is mounted at `/workspace`. Agent session state is persisted
+under the project's host-side Carthage state directory; only the selected
+agent's credential files are shared from the host. These mounts are injected
+by the user's personal Carthage agent config, not this project's compose file,
+so do not add agent-specific auth mounts to
 `.carthage/docker-compose.yaml`. Note in particular that the host LAN is
 *not* firewalled off; the container can reach anything the host user can
 reach.

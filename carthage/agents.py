@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from carthage.runtime import RuntimeEnv, RuntimeMount, RuntimeOverlay
 
@@ -29,12 +30,14 @@ class AgentProfile:
     auth_check_path: str | None = None
     auth_login_hint: str | None = None
     managed_skill_dir: str | None = None
+    state_home: str | None = None
 
     def runtime_overlay(
         self,
         *,
         include_mounts: bool = True,
         launch: bool = False,
+        state_dir: Path | None = None,
     ) -> RuntimeOverlay:
         environment: tuple[RuntimeEnv, ...] = ()
         if launch:
@@ -47,10 +50,18 @@ class AgentProfile:
                 RuntimeEnv("agent-update-command", "CARTHAGE_AGENT_UPDATE_COMMAND", self.update_command or ""),
                 *self.launch_environment,
             )
-        return RuntimeOverlay(
-            mounts=self.auth_mounts if include_mounts else (),
-            environment=environment,
-        )
+        mounts = self.auth_mounts if include_mounts else ()
+        if include_mounts and state_dir is not None and self.state_home is not None:
+            mounts = (
+                RuntimeMount(
+                    f"agent-{self.kind}-state",
+                    str(state_dir),
+                    self.state_home,
+                    "rw",
+                ),
+                *mounts,
+            )
+        return RuntimeOverlay(mounts=mounts, environment=environment)
 
 
 CLAUDE_PROFILE = AgentProfile(
@@ -64,7 +75,12 @@ CLAUDE_PROFILE = AgentProfile(
     tmux_window="claude",
     install_user="carthage",
     auth_mounts=(
-        RuntimeMount("agent-claude-dir", "${HOME}/.claude", "/home/carthage/.claude", "rw"),
+        RuntimeMount(
+            "agent-claude-credentials",
+            "${HOME}/.claude/.credentials.json",
+            "/home/carthage/.claude/.credentials.json",
+            "rw",
+        ),
         RuntimeMount(
             "agent-claude-json",
             "${HOME}/.claude.json",
@@ -72,10 +88,11 @@ CLAUDE_PROFILE = AgentProfile(
             "rw",
         ),
     ),
+    state_home="/home/carthage/.claude",
     launch_environment=(
         RuntimeEnv("agent-claude-no-flicker", "CLAUDE_CODE_NO_FLICKER", "1"),
     ),
-    auth_check_path="~/.claude",
+    auth_check_path="~/.claude/.credentials.json",
     auth_login_hint="Run `claude` on the host once to authenticate.",
     managed_skill_dir="~/.claude/skills",
 )
@@ -100,9 +117,15 @@ CODEX_PROFILE = AgentProfile(
     launch_command="codex --dangerously-bypass-approvals-and-sandbox",
     tmux_window="codex",
     auth_mounts=(
-        RuntimeMount("agent-codex-dir", "${HOME}/.codex", "/home/carthage/.codex", "rw"),
+        RuntimeMount(
+            "agent-codex-auth",
+            "${HOME}/.codex/auth.json",
+            "/home/carthage/.codex/auth.json",
+            "rw",
+        ),
     ),
-    auth_check_path="~/.codex",
+    state_home="/home/carthage/.codex",
+    auth_check_path="~/.codex/auth.json",
     auth_login_hint="Run `codex --login` on the host first.",
     managed_skill_dir="~/.codex/skills",
 )

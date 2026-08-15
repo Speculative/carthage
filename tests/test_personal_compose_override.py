@@ -101,8 +101,14 @@ def test_personal_compose_override_adds_mounts_and_environment(tmp_path):
         },
         {
             "type": "bind",
-            "source": "${HOME}/.claude",
+            "source": str(cfg.agent_state_dir("claude")),
             "target": "/home/carthage/.claude",
+            "read_only": False,
+        },
+        {
+            "type": "bind",
+            "source": "${HOME}/.claude/.credentials.json",
+            "target": "/home/carthage/.claude/.credentials.json",
             "read_only": False,
         },
         {
@@ -152,8 +158,14 @@ disable = ["notes", "editor"]
         },
         {
             "type": "bind",
-            "source": "${HOME}/.claude",
+            "source": str(cfg.agent_state_dir("claude")),
             "target": "/home/carthage/.claude",
+            "read_only": False,
+        },
+        {
+            "type": "bind",
+            "source": "${HOME}/.claude/.credentials.json",
+            "target": "/home/carthage/.claude/.credentials.json",
             "read_only": False,
         },
         {
@@ -226,8 +238,14 @@ default = "codex"
     assert "CLAUDE_CODE_NO_FLICKER" not in service["environment"]
     assert {
         "type": "bind",
-        "source": "${HOME}/.claude",
+        "source": str(cfg.agent_state_dir("claude")),
         "target": "/home/carthage/.claude",
+        "read_only": False,
+    } in service["volumes"]
+    assert {
+        "type": "bind",
+        "source": "${HOME}/.claude/.credentials.json",
+        "target": "/home/carthage/.claude/.credentials.json",
         "read_only": False,
     } in service["volumes"]
     assert {
@@ -238,8 +256,14 @@ default = "codex"
     } in service["volumes"]
     assert {
         "type": "bind",
-        "source": "${HOME}/.codex",
+        "source": str(cfg.agent_state_dir("codex")),
         "target": "/home/carthage/.codex",
+        "read_only": False,
+    } in service["volumes"]
+    assert {
+        "type": "bind",
+        "source": "${HOME}/.codex/auth.json",
+        "target": "/home/carthage/.codex/auth.json",
         "read_only": False,
     } in service["volumes"]
 
@@ -270,8 +294,14 @@ default = "codex"
     assert service["volumes"] == [
         {
             "type": "bind",
-            "source": "${HOME}/.codex",
+            "source": str(cfg.agent_state_dir("codex")),
             "target": "/home/carthage/.codex",
+            "read_only": False,
+        },
+        {
+            "type": "bind",
+            "source": "${HOME}/.codex/auth.json",
+            "target": "/home/carthage/.codex/auth.json",
             "read_only": False,
         },
     ]

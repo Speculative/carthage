@@ -19,6 +19,7 @@ def _prepare_home(path: Path) -> Path:
     home = path / "home"
     home.mkdir()
     (home / ".claude").mkdir()
+    (home / ".claude" / ".credentials.json").write_text("{}\n")
     (home / ".claude.json").write_text("{}\n")
     (home / ".gitconfig").write_text("[user]\n\tname = E2E\n\temail = e2e@example.invalid\n")
     return home
