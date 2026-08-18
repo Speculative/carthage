@@ -38,9 +38,25 @@ class AgentProfile:
         include_mounts: bool = True,
         launch: bool = False,
         state_dir: Path | None = None,
+        launch_command: str | None = None,
+        launch_window: str | None = None,
     ) -> RuntimeOverlay:
         environment: tuple[RuntimeEnv, ...] = ()
         if launch:
+            tmux_environment: tuple[RuntimeEnv, ...] = ()
+            if launch_command is not None or launch_window is not None:
+                tmux_environment = (
+                    RuntimeEnv(
+                        "tmux-command",
+                        "CARTHAGE_TMUX_COMMAND",
+                        launch_command or self.launch_command,
+                    ),
+                    RuntimeEnv(
+                        "tmux-window",
+                        "CARTHAGE_TMUX_WINDOW",
+                        launch_window or self.tmux_window,
+                    ),
+                )
             environment = (
                 RuntimeEnv("agent-kind", "CARTHAGE_AGENT_KIND", self.kind),
                 RuntimeEnv("agent-binary", "CARTHAGE_AGENT_BINARY", self.binary),
@@ -48,6 +64,7 @@ class AgentProfile:
                 RuntimeEnv("agent-window", "CARTHAGE_AGENT_WINDOW", self.tmux_window),
                 RuntimeEnv("tmux-session", "CARTHAGE_TMUX_SESSION", DEFAULT_TMUX_SESSION),
                 RuntimeEnv("agent-update-command", "CARTHAGE_AGENT_UPDATE_COMMAND", self.update_command or ""),
+                *tmux_environment,
                 *self.launch_environment,
             )
         mounts = self.auth_mounts if include_mounts else ()

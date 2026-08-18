@@ -13,8 +13,10 @@ set -euo pipefail
 log() { printf '[carthage-entrypoint] %s\n' "$*" >&2; }
 
 tmux_session="${CARTHAGE_TMUX_SESSION:-carthage-session}"
-agent_window="${CARTHAGE_AGENT_WINDOW:-shell}"
-agent_command="${CARTHAGE_AGENT_COMMAND:-bash -l}"
+# CARTHAGE_TMUX_* is the generic foreground-app interface. Fall back to the
+# older agent names so existing images/configs keep working unchanged.
+agent_window="${CARTHAGE_TMUX_WINDOW:-${CARTHAGE_AGENT_WINDOW:-shell}}"
+agent_command="${CARTHAGE_TMUX_COMMAND:-${CARTHAGE_AGENT_COMMAND:-bash -l}}"
 agent_update_command="${CARTHAGE_AGENT_UPDATE_COMMAND:-}"
 tmux_agent_command="bash -lc '${agent_command}; exec bash -l'"
 
@@ -44,6 +46,11 @@ elif ! tmux list-windows -t "${tmux_session}" -F '#{window_name}' \
     log "added tmux window '${agent_window}' to session '${tmux_session}'"
 else
     log "tmux session '${tmux_session}' already has window '${agent_window}'"
+fi
+
+if tmux list-windows -t "${tmux_session}" -F '#{window_name}' \
+        | grep -Fx -- "${agent_window}" >/dev/null; then
+    tmux select-window -t "${tmux_session}:${agent_window}"
 fi
 
 # --- Exec the CMD ----------------------------------------------------------

@@ -33,8 +33,11 @@ RESERVED_ENVIRONMENT_NAMES = frozenset({
     "CARTHAGE_AGENT_KIND",
     "CARTHAGE_AGENT_WINDOW",
     "CARTHAGE_TMUX_SESSION",
+    "CARTHAGE_TMUX_COMMAND",
+    "CARTHAGE_TMUX_WINDOW",
 })
 _APT_PACKAGE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9+.-]*$")
+_FILE_MODE_RE = re.compile(r"^0?[0-7]{3}$")
 
 
 PersonalMount = RuntimeMount
@@ -45,6 +48,14 @@ PersonalEnvironment = RuntimeEnv
 class PersonalImage:
     apt_packages: tuple[str, ...] = ()
     terminfo_files: tuple[str, ...] = ()
+    files: tuple["PersonalImageFile", ...] = ()
+
+
+@dataclass(frozen=True)
+class PersonalImageFile:
+    source: str
+    target: str
+    mode: str = "0644"
 
 
 @dataclass(frozen=True)
@@ -54,12 +65,21 @@ class PersonalAgents:
 
 
 @dataclass(frozen=True)
+class PersonalLaunch:
+    """The application started in the project's main tmux window."""
+
+    command: str | None = None
+    window: str | None = None
+
+
+@dataclass(frozen=True)
 class PersonalConfig:
     schema_version: int = CURRENT_PERSONAL_SCHEMA_VERSION
     mounts: tuple[PersonalMount, ...] = ()
     environment: tuple[PersonalEnvironment, ...] = ()
     image: PersonalImage = field(default_factory=PersonalImage)
     agents: PersonalAgents = field(default_factory=PersonalAgents)
+    launch: PersonalLaunch = field(default_factory=PersonalLaunch)
 
     @property
     def runtime_overlay(self) -> RuntimeOverlay:
@@ -164,10 +184,12 @@ def load_personal_config(path: Path | None = None) -> PersonalConfigResult:
         data.get("agent"),
         config_path,
     )
+    launch_config, launch_warnings = _parse_launch(data.get("launch"), config_path)
     warnings.extend(mount_warnings)
     warnings.extend(env_warnings)
     warnings.extend(image_warnings)
     warnings.extend(agent_warnings)
+    warnings.extend(launch_warnings)
 
     return PersonalConfigResult(
         PersonalConfig(
@@ -176,6 +198,7 @@ def load_personal_config(path: Path | None = None) -> PersonalConfigResult:
             environment=environment,
             image=image_config,
             agents=agents_config,
+            launch=launch_config,
         ),
         tuple(warnings),
         config_path,
@@ -195,12 +218,16 @@ def describe_personal_config(result: PersonalConfigResult) -> str:
         counts.append(f"{len(result.config.image.apt_packages)} apt package(s)")
     if result.config.image.terminfo_files:
         counts.append(f"{len(result.config.image.terminfo_files)} terminfo file(s)")
+    if result.config.image.files:
+        counts.append(f"{len(result.config.image.files)} image file(s)")
     if result.config.agents.default is not None or result.config.agents.installed:
         counts.append(
             "agents: "
             f"{result.config.agents.default or 'none'} default, "
             f"{len(result.config.agents.installed)} installed"
         )
+    if result.config.launch.command is not None:
+        counts.append(f"launch: {result.config.launch.window or 'default'}")
     suffix = f" ({', '.join(counts)})" if counts else ""
     base = f"{result.path} schema {result.config.schema_version}{suffix}"
     if result.warnings:
@@ -338,6 +365,11 @@ def _parse_image(raw: object, config_path: Path) -> tuple[PersonalImage, list[st
         return PersonalImage(), [
             f"{config_path}: [image].terminfo_files must be a list of strings; skipping"
         ]
+    files_raw = raw.get("files", [])
+    if not isinstance(files_raw, list):
+        return PersonalImage(), [
+            f"{config_path}: [image].files must be an array of tables; skipping image config"
+        ]
 
     packages: list[str] = []
     seen: set[str] = set()
@@ -374,10 +406,77 @@ def _parse_image(raw: object, config_path: Path) -> tuple[PersonalImage, list[st
         seen_files.add(expanded_source)
         terminfo_files.append(expanded_source)
 
+    image_files: list[PersonalImageFile] = []
+    seen_targets: set[str] = set()
+    for index, item in enumerate(files_raw, start=1):
+        label = f"{config_path}: [image].files[{index}]"
+        if not isinstance(item, dict):
+            warnings.append(f"{label} must be a table; skipping")
+            continue
+        source = _string_field(item, "source")
+        target = _string_field(item, "target")
+        mode = item.get("mode", "0644")
+        if source is None or target is None:
+            missing = [
+                name for name, value in (("source", source), ("target", target))
+                if value is None
+            ]
+            warnings.append(f"{label} missing required field(s): {', '.join(missing)}; skipping")
+            continue
+        if not isinstance(mode, str) or not _FILE_MODE_RE.match(mode):
+            warnings.append(f"{label}.mode must be an octal file mode such as '0755'; skipping")
+            continue
+        expanded_source = str(Path(source).expanduser())
+        if not Path(expanded_source).is_absolute():
+            warnings.append(
+                f"{label}.source must be absolute or start with '~'; skipping"
+            )
+            continue
+        if not target.startswith("/") or target == "/":
+            warnings.append(f"{label}.target must be an absolute non-root path; skipping")
+            continue
+        if ".." in Path(target).parts:
+            warnings.append(f"{label}.target must not contain '..'; skipping")
+            continue
+        if target in seen_targets:
+            warnings.append(f"{label}.target {target!r} is duplicated; skipping")
+            continue
+        seen_targets.add(target)
+        image_files.append(PersonalImageFile(expanded_source, target, mode))
+
     return PersonalImage(
         apt_packages=tuple(packages),
         terminfo_files=tuple(terminfo_files),
+        files=tuple(image_files),
     ), warnings
+
+
+def _parse_launch(raw: object, config_path: Path) -> tuple[PersonalLaunch, list[str]]:
+    if raw is None:
+        return PersonalLaunch(), []
+    if not isinstance(raw, dict):
+        return PersonalLaunch(), [
+            f"{config_path}: [launch] must be a table; skipping launch config"
+        ]
+
+    command = raw.get("command")
+    if not isinstance(command, str) or not command.strip():
+        return PersonalLaunch(), [
+            f"{config_path}: [launch].command must be a non-empty string; skipping launch config"
+        ]
+    command = command.strip()
+
+    window = raw.get("window")
+    if window is None:
+        window = command.split()[0]
+    elif not isinstance(window, str) or not window.strip():
+        return PersonalLaunch(), [
+            f"{config_path}: [launch].window must be a non-empty string; skipping launch config"
+        ]
+    else:
+        window = window.strip()
+
+    return PersonalLaunch(command=command, window=window), []
 
 
 def _parse_agents(

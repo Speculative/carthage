@@ -8,6 +8,9 @@ Carthage wraps each project in an isolated Docker container that has the tools y
 
 It is three cooperating pieces: a published base image (`ghcr.io/speculative/carthage-base`) with the common tooling plus a local personal layer (`carthage-base-personal`) built by `carthage fortify`; a host-side Python CLI (`carthage up`, `carthage attach`, etc.); and personal Carthage skills (`/carthage-annex`) installed into `~/.carthage/skills/` and linked into configured agents by `carthage fortify`.
 
+The main tmux window can launch a personal application instead of an agent
+directly. Agent CLIs remain installed and available to that application.
+
 The design goal is that `--dangerously-skip-permissions` is reasonable inside Carthage because the sandbox itself supplies meaningful boundaries: non-root user with a narrow capability set, no `sudo`, no Docker socket, `no-new-privileges`, tight mount scoping, ephemeral lifecycle. Prompt fatigue goes away; trust is anchored at what the container *can't* do.
 
 ## Installation
@@ -43,8 +46,8 @@ carthage attach   # drops you into a tmux session with the configured agent runn
 | `carthage up --no-host-ports` | Start the container with all host bindings stripped (internal-only). |
 | `carthage up --port H:C` | Start with an extra one-off host binding. Explicit, repeatable. |
 | `carthage attach` | Attach to the running container's tmux session. Detach with `Ctrl-b d`. |
-| `carthage agent list` | Show supported agents, which are installed in your personal image, and the default launch agent. |
-| `carthage agent use KIND` | Set the personal default launch agent, adding it to the installed-agent list if needed. Re-run `carthage fortify` afterward if the personal image does not already include it. |
+| `carthage agent list` | Show supported agents, which are installed in your personal image, and the default agent profile. |
+| `carthage agent use KIND` | Set the personal default agent profile, adding it to the installed-agent list if needed. Re-run `carthage fortify` afterward if the personal image does not already include it. |
 | `carthage down` | Stop the container. Volumes and images are kept. |
 | `carthage destroy` | Stop and remove containers, volumes, and project-local images. Confirms first. |
 | `carthage build` | Force a rebuild. Pass `--no-cache` to skip the layer cache. |
@@ -147,9 +150,17 @@ apt_packages = ["fzf", "shellcheck"]
 # Source files produced by `infocmp -x <TERM>`; compiled into the personal image.
 terminfo_files = ["~/.carthage/terminfo/xterm-ghostty"]
 
+[[image.files]]
+source = "~/go/bin/ostraka"
+target = "/usr/local/bin/ostraka"
+mode = "0755"
+
 [agents]
 installed = ["claude", "codex"]
 default = "claude"
+
+[launch]
+command = "ostraka tui"
 ```
 
 In a project-local `.carthage/config.toml`:
@@ -162,13 +173,17 @@ disable = ["notes"]
 `carthage fortify` builds a local `carthage-base-personal:v2` image from the
 published Carthage base, installs `[image].apt_packages`, compiles
 `[image].terminfo_files`, and installs the configured `[agents].installed` agent
-CLIs into that personal layer. Newly annexed projects
+CLIs into that personal layer. It copies each `[[image.files]]` entry to its
+declared target and mode. `[launch].command` controls the foreground
+application in the main tmux window; it does not change which agent CLIs are
+installed or which agent credentials are mounted. Newly annexed projects
 inherit from this local personal image. Re-run `carthage fortify` after changing
-`[image]` or adding a new installed agent. Generate a Ghostty source file with
+`[image]`, `[launch]`, or adding a new installed agent. Generate a Ghostty source file with
 `mkdir -p ~/.carthage/terminfo && infocmp -x xterm-ghostty > ~/.carthage/terminfo/xterm-ghostty`.
 
-The default launch agent is runtime config, so switching between already
-installed agents is quick:
+When `[launch]` is absent, the default agent profile controls the main tmux
+window. With `[launch]` configured, switching between already installed agent
+profiles remains quick:
 
 ```bash
 carthage agent use codex

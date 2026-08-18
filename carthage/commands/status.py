@@ -20,8 +20,9 @@ from rich.console import Console
 from rich.table import Table
 
 from carthage import CURRENT_TEMPLATE_VERSION, annex_template_is_outdated, compose, image
-from carthage.agents import DEFAULT_TMUX_SESSION, AgentConfigError, require_agent_profile
+from carthage.agents import DEFAULT_TMUX_SESSION, AgentConfigError
 from carthage.config import ConfigError, load_config
+from carthage.launch import resolve_launch
 from carthage.personal_config import load_personal_config
 
 console = Console()
@@ -139,10 +140,10 @@ def _status_current() -> None:
     # tmux session (reflects whether entrypoint successfully spun it up)
     personal = load_personal_config()
     try:
-        profile = require_agent_profile(personal.config.agents.default)
+        launch = resolve_launch(personal.config)
     except AgentConfigError as exc:
         table.add_row("agent", f"[yellow]{exc}[/yellow]")
-        profile = None
+        launch = None
     probe = compose.run(
         cfg,
         ["exec", "-T", cfg.service_name, "tmux", "has-session", "-t", DEFAULT_TMUX_SESSION],
@@ -160,17 +161,17 @@ def _status_current() -> None:
             check=False,
         )
         windows = set(window_probe.stdout.splitlines()) if window_probe.returncode == 0 else set()
-        if profile is None:
+        if launch is None:
             table.add_row(f"tmux '{DEFAULT_TMUX_SESSION}'", "[green]alive[/green]")
-        elif profile.tmux_window in windows:
+        elif launch.window in windows:
             table.add_row(
                 f"tmux '{DEFAULT_TMUX_SESSION}'",
-                f"[green]alive[/green] ({profile.tmux_window})",
+                f"[green]alive[/green] ({launch.window})",
             )
         else:
             table.add_row(
                 f"tmux '{DEFAULT_TMUX_SESSION}'",
-                f"[yellow]alive[/yellow] ({profile.tmux_window} window missing)",
+                f"[yellow]alive[/yellow] ({launch.window} window missing)",
             )
     else:
         table.add_row(f"tmux '{DEFAULT_TMUX_SESSION}'", "[dim]absent or container stopped[/dim]")

@@ -268,6 +268,39 @@ default = "codex"
     } in service["volumes"]
 
 
+def test_configured_launch_app_preserves_agent_provider_env(tmp_path):
+    _write_project(tmp_path)
+    personal_path = tmp_path / "personal.toml"
+    personal_path.write_text(
+        """
+[carthage]
+schema_version = 1
+
+[agents]
+installed = ["claude", "codex"]
+default = "codex"
+
+[launch]
+command = "ostraka tui"
+window = "ostraka"
+"""
+    )
+    cfg = load_config(tmp_path)
+    personal = load_personal_config(personal_path)
+
+    args, cleanup = _build_compose_args(cfg, False, [], personal)
+    try:
+        content = json.loads(Path(args[-1]).read_text())
+    finally:
+        cleanup()
+
+    environment = content["services"]["dev"]["environment"]
+    assert environment["CARTHAGE_AGENT_BINARY"] == "codex"
+    assert environment["CARTHAGE_AGENT_COMMAND"] == "codex --dangerously-bypass-approvals-and-sandbox"
+    assert environment["CARTHAGE_TMUX_COMMAND"] == "ostraka tui"
+    assert environment["CARTHAGE_TMUX_WINDOW"] == "ostraka"
+
+
 def test_codex_only_config_does_not_mount_claude_auth(tmp_path):
     _write_project(tmp_path)
     personal_path = tmp_path / "personal.toml"

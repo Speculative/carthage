@@ -22,6 +22,7 @@ from rich.console import Console
 from carthage import CURRENT_TEMPLATE_VERSION, annex_template_is_outdated, compose, image, ports
 from carthage.agents import AgentConfigError, agent_profiles_for, require_agent_profile, supported_agent_kinds
 from carthage.config import CarthageConfig, ConfigError, load_config
+from carthage.launch import resolve_launch
 from carthage.personal_config import PersonalConfigResult, load_personal_config
 from carthage.personal_image import (
     PersonalImageRequiredError,
@@ -350,9 +351,13 @@ def _personal_compose_override_content(
         profile.runtime_overlay(state_dir=cfg.agent_state_dir(profile.kind))
         for profile in agent_profiles_for(personal.config.agents.installed)
     )
-    agent_launch_overlay = require_agent_profile(
-        agent_override or personal.config.agents.default
-    ).runtime_overlay(include_mounts=False, launch=True)
+    launch = resolve_launch(personal.config, agent_override)
+    agent_launch_overlay = launch.provider.runtime_overlay(
+        include_mounts=False,
+        launch=True,
+        launch_command=launch.command if launch.configured else None,
+        launch_window=launch.window if launch.configured else None,
+    )
     personal_overlay = filter_disabled_overlay(personal.config.runtime_overlay, disabled)
     overlay = merge_overlays(
         personal_overlay,

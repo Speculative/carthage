@@ -4,6 +4,8 @@ from carthage.personal_config import (
     PersonalConfig,
     PersonalEnvironment,
     PersonalImage,
+    PersonalImageFile,
+    PersonalLaunch,
     PersonalMount,
     load_personal_config,
 )
@@ -61,6 +63,14 @@ value = "vim"
 [image]
 apt_packages = ["fzf", "shellcheck"]
 
+[[image.files]]
+source = "~/go/bin/ostraka"
+target = "/usr/local/bin/ostraka"
+mode = "0755"
+
+[launch]
+command = "ostraka tui"
+
 [agents]
 installed = ["claude"]
 default = "claude"
@@ -80,8 +90,18 @@ default = "claude"
             ),
         ),
         environment=(PersonalEnvironment(id="editor", name="EDITOR", value="vim"),),
-        image=PersonalImage(apt_packages=("fzf", "shellcheck")),
+        image=PersonalImage(
+            apt_packages=("fzf", "shellcheck"),
+            files=(
+                PersonalImageFile(
+                    source=str((tmp_path.home() / "go/bin/ostraka")),
+                    target="/usr/local/bin/ostraka",
+                    mode="0755",
+                ),
+            ),
+        ),
         agents=PersonalAgents(installed=("claude",), default="claude"),
+        launch=PersonalLaunch(command="ostraka tui", window="ostraka"),
     )
     assert result.exists is True
     assert result.warnings == ()
@@ -281,6 +301,58 @@ terminfo_files = ["{source}", "relative-entry", "{source}"]
     assert len(result.warnings) == 2
     assert "must be absolute" in result.warnings[0]
     assert "duplicated" in result.warnings[1]
+
+
+def test_image_files_are_expanded_and_validated(tmp_path):
+    first = tmp_path / "ostraka"
+    second = tmp_path / "other"
+    path = tmp_path / "config.toml"
+    path.write_text(
+        f"""
+[carthage]
+schema_version = 1
+
+[[image.files]]
+source = "{first}"
+target = "/usr/local/bin/ostraka"
+mode = "0755"
+
+[[image.files]]
+source = "relative-entry"
+target = "/usr/local/bin/relative"
+
+[[image.files]]
+source = "{second}"
+target = "/usr/local/bin/ostraka"
+"""
+    )
+
+    result = load_personal_config(path)
+
+    assert result.config.image.files == (
+        PersonalImageFile(str(first), "/usr/local/bin/ostraka", "0755"),
+    )
+    assert len(result.warnings) == 2
+    assert "must be absolute" in result.warnings[0]
+    assert "target '/usr/local/bin/ostraka' is duplicated" in result.warnings[1]
+
+
+def test_launch_command_defaults_window_to_command_name(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text(
+        """
+[carthage]
+schema_version = 1
+
+[launch]
+command = "ostraka tui"
+"""
+    )
+
+    result = load_personal_config(path)
+
+    assert result.config.launch == PersonalLaunch(command="ostraka tui", window="ostraka")
+    assert result.warnings == ()
 
 
 def test_legacy_agent_kind_is_accepted(tmp_path):

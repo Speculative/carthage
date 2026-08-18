@@ -10,8 +10,9 @@ import click
 from rich.console import Console
 
 from carthage import compose
-from carthage.agents import DEFAULT_TMUX_SESSION, AgentConfigError, require_agent_profile
+from carthage.agents import DEFAULT_TMUX_SESSION, AgentConfigError
 from carthage.config import ConfigError, load_config
+from carthage.launch import resolve_launch
 from carthage.personal_config import load_personal_config
 
 console = Console()
@@ -33,14 +34,14 @@ def attach(session: str | None) -> None:
 
     personal = load_personal_config()
     try:
-        profile = require_agent_profile(personal.config.agents.default)
+        launch = resolve_launch(personal.config)
     except AgentConfigError as exc:
         console.print(f"[red]error:[/red] {exc}")
         sys.exit(2)
     if session is None:
         session = DEFAULT_TMUX_SESSION
 
-    _ensure_agent_window(cfg, session=session, window=profile.tmux_window, command=profile.launch_command)
+    _ensure_agent_window(cfg, session=session, window=launch.window, command=launch.command)
 
     # If the session doesn't exist yet (e.g. entrypoint's attempt failed),
     # start one. Using `new-session -A` attaches if it exists, otherwise creates.
@@ -69,6 +70,7 @@ if ! tmux has-session -t "$session" 2>/dev/null; then
 elif ! tmux list-windows -t "$session" -F '#{{window_name}}' | grep -Fx -- "$window" >/dev/null; then
     tmux new-window -d -t "$session:" -n "$window" "$tmux_command"
 fi
+tmux select-window -t "$session:$window"
 """
     compose.run(
         cfg,

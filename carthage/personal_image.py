@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shlex
 import subprocess
 import tempfile
 import os
@@ -12,7 +13,7 @@ from pathlib import Path
 from carthage import EXPECTED_BASE_IMAGE_TAG, PERSONAL_BASE_IMAGE_REPO, __version__
 from carthage.agents import agent_profiles_for
 from carthage import image
-from carthage.personal_config import PersonalConfig
+from carthage.personal_config import PersonalConfig, PersonalImageFile
 
 
 PERSONAL_IMAGE_HASH_LABEL = "org.carthage.personal-image-hash"
@@ -62,6 +63,7 @@ def personal_image_hash(*, base_image: str, config: PersonalConfig) -> str:
         ],
         "apt_packages": config.image.apt_packages,
         "terminfo_files": _terminfo_file_fingerprints(config.image.terminfo_files),
+        "files": _image_file_fingerprints(config.image.files),
     }
     raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(raw).hexdigest()[:16]
@@ -80,6 +82,30 @@ def _terminfo_file_fingerprints(files: tuple[str, ...]) -> list[dict[str, str]]:
             fingerprints.append({"path": source, "error": str(exc)})
         else:
             fingerprints.append({"path": source, "sha256": digest})
+    return fingerprints
+
+
+def _image_file_fingerprints(files: tuple[PersonalImageFile, ...]) -> list[dict[str, str]]:
+    """Fingerprint copied personal files and their image destinations."""
+    fingerprints = []
+    for item in files:
+        path = Path(item.source)
+        try:
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        except OSError as exc:
+            fingerprints.append({
+                "source": item.source,
+                "target": item.target,
+                "mode": item.mode,
+                "error": str(exc),
+            })
+        else:
+            fingerprints.append({
+                "source": item.source,
+                "target": item.target,
+                "mode": item.mode,
+                "sha256": digest,
+            })
     return fingerprints
 
 
@@ -133,6 +159,14 @@ def render_personal_image_dockerfile(base_image: str, config: PersonalConfig) ->
             " && rm -rf /tmp/carthage-terminfo",
         ])
 
+    for index, item in enumerate(config.image.files):
+        lines.extend([
+            "",
+            f"# Personal file: {item.source} -> {item.target}",
+            f"COPY [\"files/{index}\", {json.dumps(item.target)}]",
+            f"RUN chmod {item.mode} {shlex.quote(item.target)}",
+        ])
+
     for profile in agent_profiles_for(config.agents.installed):
         if not profile.root_install_commands and not profile.install_commands:
             continue
@@ -184,8 +218,9 @@ def build_personal_image(
         context = Path(tmp)
         try:
             _copy_terminfo_files(context, config.image.terminfo_files)
+            _copy_image_files(context, config.image.files)
         except OSError as exc:
-            return False, f"could not stage terminfo source: {exc}"
+            return False, f"could not stage personal image file: {exc}"
         dockerfile = Path(tmp) / "Dockerfile"
         dockerfile.write_text(render_personal_image_dockerfile(base_image, config))
         args = ["docker", "build", "-t", target_image, "-f", str(dockerfile)]
@@ -210,6 +245,18 @@ def _copy_terminfo_files(context: Path, files: tuple[str, ...]) -> None:
     destination.mkdir()
     for index, source in enumerate(files):
         path = Path(source)
+        if not path.is_file():
+            raise OSError(f"{path} is not a readable regular file")
+        (destination / str(index)).write_bytes(path.read_bytes())
+
+
+def _copy_image_files(context: Path, files: tuple[PersonalImageFile, ...]) -> None:
+    if not files:
+        return
+    destination = context / "files"
+    destination.mkdir()
+    for index, item in enumerate(files):
+        path = Path(item.source)
         if not path.is_file():
             raise OSError(f"{path} is not a readable regular file")
         (destination / str(index)).write_bytes(path.read_bytes())

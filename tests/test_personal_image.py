@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from carthage.personal_config import PersonalAgents, PersonalConfig, PersonalImage
+from carthage.personal_config import PersonalAgents, PersonalConfig, PersonalImage, PersonalImageFile
 from carthage.personal_image import (
     PERSONAL_IMAGE_HASH_LABEL,
     PersonalImageRequiredError,
@@ -59,6 +59,20 @@ def test_render_personal_image_compiles_terminfo_sources():
     assert "      ncurses-bin \\\n && rm -rf /var/lib/apt/lists/*" in dockerfile
     assert "COPY terminfo/ /tmp/carthage-terminfo/" in dockerfile
     assert 'tic -x -o /usr/share/terminfo "$source"' in dockerfile
+
+
+def test_render_personal_image_copies_personal_files():
+    dockerfile = render_personal_image_dockerfile(
+        "ghcr.io/speculative/carthage-base:v2",
+        PersonalConfig(
+            image=PersonalImage(
+                files=(PersonalImageFile("/home/jtao/go/bin/ostraka", "/usr/local/bin/ostraka", "0755"),),
+            ),
+        ),
+    )
+
+    assert 'COPY ["files/0", "/usr/local/bin/ostraka"]' in dockerfile
+    assert "RUN chmod 0755 /usr/local/bin/ostraka" in dockerfile
 
 
 def test_render_personal_image_installs_codex_agent():
@@ -134,6 +148,27 @@ def test_personal_image_hash_tracks_terminfo_source_contents(tmp_path):
     second = personal_image_hash(base_image="base:v2", config=config)
 
     assert second != first
+
+
+def test_personal_image_hash_tracks_copied_file_contents_and_destination(tmp_path):
+    source = tmp_path / "ostraka"
+    source.write_bytes(b"first")
+    config = PersonalConfig(
+        image=PersonalImage(files=(PersonalImageFile(str(source), "/usr/local/bin/ostraka", "0755"),)),
+    )
+
+    first = personal_image_hash(base_image="base:v2", config=config)
+    source.write_bytes(b"second")
+    second = personal_image_hash(base_image="base:v2", config=config)
+    moved = personal_image_hash(
+        base_image="base:v2",
+        config=PersonalConfig(
+            image=PersonalImage(files=(PersonalImageFile(str(source), "/usr/bin/ostraka", "0755"),)),
+        ),
+    )
+
+    assert second != first
+    assert moved != second
 
 
 def test_personal_image_hash_tracks_root_agent_install_commands(monkeypatch):
@@ -286,6 +321,34 @@ def test_build_personal_image_stages_terminfo_source(tmp_path, monkeypatch):
     assert (ok, detail) == (True, "personal:v2")
     assert staged["source"] == source.read_text()
     assert "COPY terminfo/ /tmp/carthage-terminfo/" in staged["dockerfile"]
+
+
+def test_build_personal_image_stages_personal_files(tmp_path, monkeypatch):
+    import subprocess
+
+    source = tmp_path / "ostraka"
+    source.write_bytes(b"binary")
+    staged = {}
+
+    def fake_run(args, **kwargs):
+        context = args[-1]
+        staged["source"] = (Path(context) / "files" / "0").read_bytes()
+        staged["dockerfile"] = (Path(context) / "Dockerfile").read_text()
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    monkeypatch.setattr("carthage.personal_image.subprocess.run", fake_run)
+
+    ok, detail = build_personal_image(
+        base_image="base:v2",
+        target_image="personal:v2",
+        config=PersonalConfig(
+            image=PersonalImage(files=(PersonalImageFile(str(source), "/usr/local/bin/ostraka", "0755"),)),
+        ),
+    )
+
+    assert (ok, detail) == (True, "personal:v2")
+    assert staged["source"] == source.read_bytes()
+    assert 'COPY ["files/0", "/usr/local/bin/ostraka"]' in staged["dockerfile"]
 
 
 def test_require_project_personal_image_accepts_expected_from(tmp_path):
