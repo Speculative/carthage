@@ -3,6 +3,8 @@
 Personal config is intentionally softer than project config: a malformed
 `~/.carthage/config.toml` should not break every Carthage project on the
 machine. Callers get defaults plus warnings they can surface to the user.
+Remote targets are also personal because their SSH aliases and destination
+paths are host-specific.
 """
 
 from __future__ import annotations
@@ -73,6 +75,15 @@ class PersonalLaunch:
 
 
 @dataclass(frozen=True)
+class RemoteTarget:
+    """An SSH host and destination root for workspace handoff."""
+
+    name: str
+    ssh: str
+    projects_dir: str
+
+
+@dataclass(frozen=True)
 class PersonalConfig:
     schema_version: int = CURRENT_PERSONAL_SCHEMA_VERSION
     mounts: tuple[PersonalMount, ...] = ()
@@ -80,6 +91,7 @@ class PersonalConfig:
     image: PersonalImage = field(default_factory=PersonalImage)
     agents: PersonalAgents = field(default_factory=PersonalAgents)
     launch: PersonalLaunch = field(default_factory=PersonalLaunch)
+    remotes: tuple[RemoteTarget, ...] = ()
 
     @property
     def runtime_overlay(self) -> RuntimeOverlay:
@@ -185,11 +197,13 @@ def load_personal_config(path: Path | None = None) -> PersonalConfigResult:
         config_path,
     )
     launch_config, launch_warnings = _parse_launch(data.get("launch"), config_path)
+    remotes_config, remote_warnings = _parse_remotes(data.get("remotes"), config_path)
     warnings.extend(mount_warnings)
     warnings.extend(env_warnings)
     warnings.extend(image_warnings)
     warnings.extend(agent_warnings)
     warnings.extend(launch_warnings)
+    warnings.extend(remote_warnings)
 
     return PersonalConfigResult(
         PersonalConfig(
@@ -199,6 +213,7 @@ def load_personal_config(path: Path | None = None) -> PersonalConfigResult:
             image=image_config,
             agents=agents_config,
             launch=launch_config,
+            remotes=remotes_config,
         ),
         tuple(warnings),
         config_path,
@@ -228,6 +243,8 @@ def describe_personal_config(result: PersonalConfigResult) -> str:
         )
     if result.config.launch.command is not None:
         counts.append(f"launch: {result.config.launch.window or 'default'}")
+    if result.config.remotes:
+        counts.append(f"{len(result.config.remotes)} remote(s)")
     suffix = f" ({', '.join(counts)})" if counts else ""
     base = f"{result.path} schema {result.config.schema_version}{suffix}"
     if result.warnings:
@@ -477,6 +494,51 @@ def _parse_launch(raw: object, config_path: Path) -> tuple[PersonalLaunch, list[
         window = window.strip()
 
     return PersonalLaunch(command=command, window=window), []
+
+
+def _parse_remotes(
+    raw: object,
+    config_path: Path,
+) -> tuple[tuple[RemoteTarget, ...], list[str]]:
+    if raw is None:
+        return (), []
+    if not isinstance(raw, dict):
+        return (), [f"{config_path}: [remotes] must be a table; skipping remotes"]
+
+    remotes: list[RemoteTarget] = []
+    warnings: list[str] = []
+    for name, item in raw.items():
+        label = f"{config_path}: [remotes.{name}]"
+        if not isinstance(name, str) or not name.strip():
+            warnings.append(f"{label} must have a non-empty name; skipping")
+            continue
+        if not isinstance(item, dict):
+            warnings.append(f"{label} must be a table; skipping")
+            continue
+        ssh = _string_field(item, "ssh")
+        projects_dir = _string_field(item, "projects_dir")
+        missing = [
+            field for field, value in (("ssh", ssh), ("projects_dir", projects_dir))
+            if value is None
+        ]
+        if missing:
+            warnings.append(f"{label} missing required field(s): {', '.join(missing)}; skipping")
+            continue
+        assert ssh is not None and projects_dir is not None
+        if (
+            ssh.startswith("-")
+            or any(char.isspace() or ord(char) == 0 for char in ssh)
+            or not all(char.isalnum() or char in "._@:-[]" for char in ssh)
+        ):
+            warnings.append(
+                f"{label}.ssh must be an SSH alias or user@host using safe host characters; skipping"
+            )
+            continue
+        if not Path(projects_dir).is_absolute() or "\x00" in projects_dir:
+            warnings.append(f"{label}.projects_dir must be an absolute path; skipping")
+            continue
+        remotes.append(RemoteTarget(name.strip(), ssh, projects_dir))
+    return tuple(remotes), warnings
 
 
 def _parse_agents(

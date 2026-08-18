@@ -1,5 +1,10 @@
-from carthage.commands.survey import check_agent_auth_dirs
-from carthage.personal_config import PersonalAgents, PersonalConfig, PersonalConfigResult
+from carthage.commands.survey import check_agent_auth_dirs, check_personal_mount_sources
+from carthage.personal_config import (
+    PersonalAgents,
+    PersonalConfig,
+    PersonalConfigResult,
+    PersonalMount,
+)
 
 
 def _personal_result(tmp_path, *agents: str) -> PersonalConfigResult:
@@ -35,3 +40,36 @@ def test_agent_auth_dirs_report_profile_login_hint(tmp_path, monkeypatch):
     assert results[0].name == "codex auth"
     assert results[0].ok is False
     assert "Run `codex --login` on the host first." in results[0].detail
+
+
+def test_personal_mount_sources_are_checked(tmp_path):
+    source = tmp_path / "notes"
+    source.mkdir()
+    result = PersonalConfigResult(
+        config=PersonalConfig(
+            mounts=(PersonalMount("notes", str(source), "/notes", "ro"),),
+        ),
+        warnings=(),
+        path=tmp_path / "config.toml",
+        exists=True,
+    )
+
+    checks = check_personal_mount_sources(result)
+
+    assert checks[0].name == "personal mount notes"
+    assert checks[0].ok is True
+
+
+def test_personal_mount_sources_report_missing_path(tmp_path):
+    result = PersonalConfigResult(
+        config=PersonalConfig(
+            mounts=(PersonalMount("notes", str(tmp_path / "missing"), "/notes", "ro"),),
+        ),
+        warnings=(),
+        path=tmp_path / "config.toml",
+        exists=True,
+    )
+
+    checks = check_personal_mount_sources(result)
+
+    assert checks[0].ok is False

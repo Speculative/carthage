@@ -131,6 +131,23 @@ def check_agent_auth_dirs(personal: PersonalConfigResult) -> list[CheckResult]:
     return results
 
 
+def check_personal_mount_sources(personal: PersonalConfigResult) -> list[CheckResult]:
+    """Verify host paths used by runtime personal mounts before `up`.
+
+    This is especially useful on a remote host: personal config is
+    intentionally host-local, so a transferred project cannot assume that a
+    mount source from the laptop exists on the server.
+    """
+    results: list[CheckResult] = []
+    for mount in personal.config.mounts:
+        path = Path(mount.source).expanduser()
+        ok, detail = _check_readable_dir(path, "Update or disable this personal mount on the host.")
+        results.append(CheckResult(f"personal mount {mount.id or mount.target}", ok, detail))
+    if not results:
+        results.append(CheckResult("personal mount sources", True, "no personal mounts configured"))
+    return results
+
+
 @_check("host UID/GID are sensible")
 def check_uid_gid() -> tuple[bool, str]:
     uid, gid = os.getuid(), os.getgid()
@@ -300,6 +317,7 @@ def survey(base_image: str | None) -> None:
         results.append(check_compose_v2())
     results.append(CheckResult("personal config", True, describe_personal_config(personal)))
     results.extend(check_agent_auth_dirs(personal))
+    results.extend(check_personal_mount_sources(personal))
     results.append(check_uid_gid())
     results.append(check_skill_versions())
 

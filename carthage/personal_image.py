@@ -51,6 +51,11 @@ def personal_image_hash(*, base_image: str, config: PersonalConfig) -> str:
     payload = {
         "schema": 1,
         "cli_version": __version__,
+        # Bind-mounted agent state and credentials are owned by the host user.
+        # Include the numeric identity so a personal image built on one host
+        # is not incorrectly reused on another host with different IDs.
+        "host_uid": os.getuid(),
+        "host_gid": os.getgid(),
         "base_image": base_image,
         "agents": [
             {
@@ -135,7 +140,28 @@ def render_personal_image_dockerfile(base_image: str, config: PersonalConfig) ->
         f"FROM {base_image}",
         f'LABEL {PERSONAL_IMAGE_HASH_LABEL}="{expected_hash}"',
         "",
+        "ARG HOST_UID=1000",
+        "ARG HOST_GID=1000",
+        "",
         "USER root",
+        "RUN set -eux; \\",
+        "    target_user=\"$(getent passwd \"$HOST_UID\" | cut -d: -f1 || true)\"; \\",
+        "    if [ -n \"$target_user\" ] && [ \"$target_user\" != carthage ]; then \\",
+        "      echo \"HOST_UID=$HOST_UID is already assigned to $target_user\" >&2; \\",
+        "      exit 1; \\",
+        "    fi; \\",
+        "    target_group=\"$(getent group \"$HOST_GID\" | cut -d: -f1 || true)\"; \\",
+        "    if [ -n \"$target_group\" ] && [ \"$target_group\" != carthage ]; then \\",
+        "      echo \"HOST_GID=$HOST_GID is already assigned to $target_group\" >&2; \\",
+        "      exit 1; \\",
+        "    fi; \\",
+        "    current_gid=\"$(id -g carthage)\"; \\",
+        "    if [ \"$current_gid\" != \"$HOST_GID\" ]; then groupmod --gid \"$HOST_GID\" carthage; fi; \\",
+        "    current_uid=\"$(id -u carthage)\"; \\",
+        "    if [ \"$current_uid\" != \"$HOST_UID\" ] || [ \"$current_gid\" != \"$HOST_GID\" ]; then \\",
+        "      usermod --uid \"$HOST_UID\" --gid \"$HOST_GID\" carthage; \\",
+        "    fi; \\",
+        "    chown -R carthage:carthage /home/carthage /commandhistory",
     ]
     image_packages = list(config.image.apt_packages)
     if config.image.terminfo_files and "ncurses-bin" not in image_packages:
@@ -223,7 +249,11 @@ def build_personal_image(
             return False, f"could not stage personal image file: {exc}"
         dockerfile = Path(tmp) / "Dockerfile"
         dockerfile.write_text(render_personal_image_dockerfile(base_image, config))
-        args = ["docker", "build", "-t", target_image, "-f", str(dockerfile)]
+        args = [
+            "docker", "build", "-t", target_image, "-f", str(dockerfile),
+            "--build-arg", f"HOST_UID={os.getuid()}",
+            "--build-arg", f"HOST_GID={os.getgid()}",
+        ]
         if no_cache:
             args.append("--no-cache")
         args.append(tmp)

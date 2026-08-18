@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from carthage.personal_config import PersonalAgents, PersonalConfig, PersonalImage, PersonalImageFile
@@ -34,6 +35,19 @@ def test_render_personal_image_without_packages():
     assert f"LABEL {PERSONAL_IMAGE_HASH_LABEL}=" in dockerfile
     assert "apt-get install" not in dockerfile
     assert dockerfile.endswith("WORKDIR /workspace\n")
+
+
+def test_render_personal_image_remaps_host_identity():
+    dockerfile = render_personal_image_dockerfile(
+        "ghcr.io/speculative/carthage-base:v2",
+        PersonalConfig(),
+    )
+
+    assert "ARG HOST_UID=1000" in dockerfile
+    assert "ARG HOST_GID=1000" in dockerfile
+    assert "groupmod --gid \"$HOST_GID\" carthage" in dockerfile
+    assert "usermod --uid \"$HOST_UID\" --gid \"$HOST_GID\" carthage" in dockerfile
+    assert "chown -R carthage:carthage /home/carthage /commandhistory" in dockerfile
 
 
 def test_render_personal_image_with_apt_packages():
@@ -267,6 +281,8 @@ def test_build_personal_image_uses_docker_cache_by_default(monkeypatch):
 
     assert ok is True
     assert detail == "personal:v2"
+    assert f"HOST_UID={os.getuid()}" in calls[0][0]
+    assert f"HOST_GID={os.getgid()}" in calls[0][0]
     args, kwargs = calls[0]
     assert args[:5] == ["docker", "build", "-t", "personal:v2", "-f"]
     assert "--no-cache" not in args

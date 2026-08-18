@@ -7,6 +7,7 @@ from carthage.personal_config import (
     PersonalImageFile,
     PersonalLaunch,
     PersonalMount,
+    RemoteTarget,
     load_personal_config,
 )
 
@@ -434,3 +435,49 @@ default = "codex"
         default="codex",
     )
     assert result.warnings == ()
+
+
+def test_remote_targets_are_loaded(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text(
+        """
+[carthage]
+schema_version = 1
+
+[remotes.cloud]
+ssh = "cloud"
+projects_dir = "/srv/carthage/projects"
+"""
+    )
+
+    result = load_personal_config(path)
+
+    assert result.config.remotes == (
+        RemoteTarget("cloud", "cloud", "/srv/carthage/projects"),
+    )
+    assert result.warnings == ()
+
+
+def test_invalid_remote_targets_are_skipped(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text(
+        """
+[carthage]
+schema_version = 1
+
+[remotes.bad_ssh]
+ssh = "-o ProxyCommand=bad"
+projects_dir = "/srv/projects"
+
+[remotes.bad_path]
+ssh = "cloud"
+projects_dir = "relative/projects"
+"""
+    )
+
+    result = load_personal_config(path)
+
+    assert result.config.remotes == ()
+    assert len(result.warnings) == 2
+    assert "SSH alias" in result.warnings[0]
+    assert "absolute path" in result.warnings[1]

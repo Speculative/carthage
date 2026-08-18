@@ -17,6 +17,7 @@ from carthage.commands import (
     destroy,
     down,
     fortify,
+    handoff,
     status,
     survey,
     up,
@@ -82,6 +83,8 @@ cli.add_command(attach.attach)
 cli.add_command(status.status)
 cli.add_command(survey.survey)
 cli.add_command(destroy.destroy)
+cli.add_command(handoff.handoff)
+cli.add_command(handoff.reclaim)
 
 
 def main() -> None:

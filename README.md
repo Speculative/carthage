@@ -54,6 +54,8 @@ carthage attach   # drops you into a tmux session with the configured agent runn
 | `carthage status` | Quick runtime state for the current project. |
 | `carthage status --all` | Table of every running Carthage container across projects (reads Docker labels; no registry file). |
 | `carthage survey` | Diagnostic: deps, skill version alignment, config schema, Dockerfile `FROM`, and configured agent credentials. |
+| `carthage handoff REMOTE` | Stop locally, mirror the project and project state over SSH/rsync, and start it on a configured remote. |
+| `carthage reclaim REMOTE` | Stop the remote, mirror its project and project state back locally, and start it here. |
 | `carthage --version` | CLI version + installed skill versions + expected base image. |
 
 ## Security model
@@ -161,6 +163,10 @@ default = "claude"
 
 [launch]
 command = "ostraka tui"
+
+[remotes.cloud]
+ssh = "cloud"                         # SSH alias or user@host
+projects_dir = "/home/user/carthage"  # absolute path on the remote
 ```
 
 In a project-local `.carthage/config.toml`:
@@ -180,6 +186,10 @@ installed or which agent credentials are mounted. Newly annexed projects
 inherit from this local personal image. Re-run `carthage fortify` after changing
 `[image]`, `[launch]`, or adding a new installed agent. Generate a Ghostty source file with
 `mkdir -p ~/.carthage/terminfo && infocmp -x xterm-ghostty > ~/.carthage/terminfo/xterm-ghostty`.
+The personal image also remaps its `carthage` user to the host's numeric
+UID/GID, so bind-mounted agent state remains writable on hosts whose IDs differ
+from the published base image. Re-run `carthage fortify --rebuild-personal`
+after upgrading the CLI on such a host.
 
 When `[launch]` is absent, the default agent profile controls the main tmux
 window. With `[launch]` configured, switching between already installed agent
@@ -196,6 +206,30 @@ Project-local `.carthage/config.toml` remains the source of truth for each
 project. Be careful with personal mounts: they apply to every Carthage project
 unless that project opts out, including projects whose code you do not fully
 trust.
+
+### Remote handoff
+
+Configure an SSH alias (including keys, ports, and jump hosts) in
+`~/.ssh/config`, then add a `[remotes.<name>]` table as shown above. The
+remote must have OpenSSH, rsync, Docker with Compose v2, a compatible Carthage
+major version, and its own completed `carthage fortify`/agent authentication.
+If your local terminal reports `TERM=xterm-ghostty`, each remote also needs that
+terminfo source in its host-local personal configuration. Handoff warns when the
+remote cannot find it, but does not modify the remote host.
+
+`carthage handoff cloud` stops the local Compose project, mirrors the complete
+project tree—including ignored, untracked, and Git metadata—and mirrors
+`~/.carthage/state/<slug>/` to the remote before starting the remote project.
+Images and global agent credentials stay on each host; the destination builds
+its own images. `carthage reclaim cloud` performs the reverse transfer.
+
+The MVP is intentionally explicit and single-user: it does not enforce
+ownership manifests or provide rollback. Before either command, rsync performs
+an itemized dry run. If any destination file would be overwritten or deleted,
+the command prints representative paths and exits; repeat with `--force` to
+authorize the destructive changes. Use `--dry-run` to inspect the plan and
+`--no-up` to transfer while leaving the destination stopped. Do not restart or
+edit the inactive copy after a successful handoff.
 
 ## Troubleshooting
 
