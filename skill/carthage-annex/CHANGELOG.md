@@ -6,6 +6,21 @@ This changelog covers the *templates* this skill generates: `.carthage/Dockerfil
 
 New entries use flat template versions. Historical entries before Carthage 2.0 used CLI semver because `annexed_with_cli` was the old template drift marker.
 
+## Template 2 — 2026-09-25
+
+### Changed
+- **Clarified the `carthage-env` skill's lifecycle.** The skill now tells the
+  agent to load the sandbox guidance on the first turn of a fresh agent context,
+  retain it for later turns in that context, and avoid reloading it merely
+  because another user message, task, or tool call begins.
+
+### Migration for existing projects
+Refresh the project-local `carthage-env` skill from the current template under
+the agent discovery paths the project supports, such as
+`.claude/skills/carthage-env/SKILL.md` and `.agents/skills/carthage-env/SKILL.md`.
+Update `template_version` to `2` in `.carthage/config.toml` after applying the
+change.
+
 ## Template 1 — 2026-05-21
 
 ### Changed

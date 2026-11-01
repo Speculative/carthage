@@ -21,7 +21,7 @@ MIN_READABLE_PROJECT_SCHEMA_VERSION = 1
 
 # The annex template bundle version the CLI currently writes. This is bumped
 # only when generated committed project files should change.
-CURRENT_TEMPLATE_VERSION = 1
+CURRENT_TEMPLATE_VERSION = 2
 
 # The base image major this CLI expects. When the CLI bumps its major, this
 # likely bumps too — but not always; a CLI major bump may just be a config
