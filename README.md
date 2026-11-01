@@ -69,6 +69,8 @@ carthage attach   # drops you into a tmux session with the configured agent runn
   writable with your normal host ownership. Namespace root is not host root.
   Claude receives `IS_SANDBOX=1` in the rootless personal image so unattended
   launches continue to work.
+- **Host ports bind to localhost.** `carthage up` applies this to every service,
+  including existing project configurations and `--port` overrides.
 - **Narrow Linux capabilities.** `cap_drop: [ALL]` then `cap_add: [CHOWN, SETUID, SETGID, DAC_OVERRIDE]`. No `SYS_ADMIN`, no `NET_ADMIN`, no `SYS_PTRACE`. Projects that need `SYS_PTRACE` (gdb/strace/perf) opt in during annex; the annex skill asks.
 - **`no-new-privileges`.** Setuid binaries can't gain privilege. No `sudo` is installed.
 - **No Docker socket.** `/var/run/docker.sock` is never mounted. The container can't start sibling containers or escape via the daemon.

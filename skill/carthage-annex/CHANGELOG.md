@@ -6,6 +6,19 @@ This changelog covers the *templates* this skill generates: `.carthage/Dockerfil
 
 New entries use flat template versions. Historical entries before Carthage 2.0 used CLI semver because `annexed_with_cli` was the old template drift marker.
 
+## Template 3 — 2026-10-30
+
+### Changed
+- Published host ports bind to `127.0.0.1` so they remain available on the
+  laptop without exposing them to its network. The authenticated Lyoko proxy
+  continues to reach container-local listeners.
+
+### Migration for existing projects
+`carthage up` enforces loopback bindings for all project services, including
+older compose files. To make direct Docker Compose invocations match, prefix
+published ports with `127.0.0.1:` (for example `127.0.0.1:5173:5173`) and update
+`template_version` to `3` after refreshing generated files.
+
 ## Template 2 — 2026-09-25
 
 ### Changed

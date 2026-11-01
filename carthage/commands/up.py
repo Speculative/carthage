@@ -372,42 +372,27 @@ def _port_compose_override_content(
     no_host_ports: bool,
     overrides: list[tuple[int, int]],
 ) -> str | None:
-    if not no_host_ports and not overrides:
+    original = ports.extract_host_ports(cfg, include_automatic=True)
+    services = {binding.service for binding in original}
+    if overrides or no_host_ports:
+        services.add(cfg.service_name)
+    if not services:
         return None
-
-    parts: list[str] = ["services:", f"  {cfg.service_name}:"]
-    if no_host_ports:
-        # User asked for no host ports at all; ignore --port too — explicit
-        # mutual exclusion would surprise users who combined them. Reset wins.
-        parts.append("    ports: !reset []")
-    elif overrides:
-        # Resolve original bindings for this service, replace any whose
-        # container port matches a --port override, then append leftover
-        # overrides as additions. Use !override so compose treats this as a
-        # full replacement of the ports list.
-        original = [b for b in ports.extract_host_ports(cfg) if b.service == cfg.service_name]
-        override_by_container = {container: host for host, container in overrides}
-
-        merged: list[str] = []
-        replaced_containers: set[int] = set()
-        for b in original:
-            if b.target in override_by_container:
-                new_host = override_by_container[b.target]
-                replaced_containers.add(b.target)
-                published = new_host
-            else:
-                published = b.published
-            entry = f"{b.host_ip}:{published}:{b.target}" if b.host_ip else f"{published}:{b.target}"
-            if b.protocol and b.protocol != "tcp":
-                entry = f"{entry}/{b.protocol}"
-            merged.append(entry)
-        for host, container in overrides:
-            if container not in replaced_containers:
-                merged.append(f"{host}:{container}")
-
+    parts = ["services:"]
+    for service in sorted(services):
+        parts.append(f"  {service}:")
+        if no_host_ports:
+            parts.append("    ports: !reset []")
+            continue
+        bindings = [binding for binding in original if binding.service == service]
+        replacements = dict((container, host) for host, container in overrides) if service == cfg.service_name else {}
+        merged = []
+        for binding in bindings:
+            published = replacements.pop(binding.target, binding.published)
+            merged.append(f"127.0.0.1:{published if published is not None else ''}:{binding.target}/{binding.protocol}")
+        merged.extend(f"127.0.0.1:{host}:{container}/tcp" for container, host in replacements.items())
         parts.append("    ports: !override")
-        for entry in merged:
-            parts.append(f"      - \"{entry}\"")
+        parts.extend(f'      - "{entry}"' for entry in merged)
     return "\n".join(parts) + "\n"
 
 
@@ -466,7 +451,7 @@ def _check_port_collisions(
     bindings = ports.extract_host_ports(cfg, extra_compose_files=extra_files)
     if not bindings:
         return
-    conflicts = ports.find_conflicts(bindings)
+    conflicts = ports.find_conflicts(bindings, ignore_project=cfg.project_slug)
     if not conflicts:
         return
     console.print("[red]port collision detected:[/red]")

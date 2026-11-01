@@ -81,7 +81,7 @@ services:
     # project already owns one of these. Use `carthage up --no-host-ports`
     # or `carthage up --port H:C` to override for one run.
     ports:
-{% for port in published_ports %}      - "{{ port }}:{{ port }}"
+{% for port in published_ports %}      - "127.0.0.1:{{ port }}:{{ port }}"
 {% endfor %}
 {% endif %}
 

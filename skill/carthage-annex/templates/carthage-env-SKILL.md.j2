@@ -1,6 +1,6 @@
 ---
 name: carthage-env
-version: "{{ template_version | default(2) }}"
+version: "{{ template_version | default(3) }}"
 description: Describes the Carthage sandbox environment this project runs inside. When an agent starts with the `$CARTHAGE` environment variable set, load this guidance during the first turn of the fresh agent context. Keep it in force for later turns in that same context; do not reload it solely because another user message, task, or tool call begins. Also use it when the user asks "am I in a sandbox", "what can I do here", "is there sudo", "what's the network setup", "can I push from here", or any orientation question about this environment.
 ---
 

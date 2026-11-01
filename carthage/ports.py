@@ -25,7 +25,7 @@ from carthage.config import CarthageConfig
 @dataclass
 class HostPortBinding:
     service: str
-    published: int
+    published: int | None
     target: int
     protocol: str  # "tcp" / "udp"
     host_ip: str = ""  # "" means bind on all interfaces (0.0.0.0); "127.0.0.1" means localhost-only
@@ -34,6 +34,7 @@ class HostPortBinding:
 def extract_host_ports(
     cfg: CarthageConfig,
     extra_compose_files: list[str] | None = None,
+    *, include_automatic: bool = False,
 ) -> list[HostPortBinding]:
     """Return the resolved host-side port bindings from the project's compose.
 
@@ -42,7 +43,9 @@ def extract_host_ports(
     `carthage up --port` generates). Without it, only `.carthage/docker-compose.yaml`
     is read — which means the precheck won't see user-supplied overrides.
 
-    Services with no `ports:` block (or only container-internal ports) contribute nothing.
+    Services with no `ports:` block contribute nothing. `include_automatic`
+    includes ports without an explicit published number so callers can constrain
+    their bind address before Docker allocates an ephemeral host port.
     """
     if extra_compose_files:
         f_args: list[str] = []
@@ -78,7 +81,10 @@ def extract_host_ports(
                 # or "3000/tcp" (internal only). When 3 colon-separated parts,
                 # the leading one is host_ip.
                 if ":" not in p:
-                    continue  # internal-only, no host binding
+                    if include_automatic:
+                        target, _, protocol = p.partition("/")
+                        out.append(HostPortBinding(service_name, None, int(target), protocol or "tcp"))
+                    continue
                 parts = p.split(":")
                 if len(parts) == 3:
                     host_ip, host_part, container_part = parts
@@ -90,18 +96,18 @@ def extract_host_ports(
                     container_part, protocol = container_part.split("/", 1)
                 out.append(HostPortBinding(
                     service=service_name,
-                    published=int(host_part),
+                    published=int(host_part) if host_part else None,
                     target=int(container_part),
                     protocol=protocol,
                     host_ip=host_ip,
                 ))
             elif isinstance(p, dict):
-                if p.get("published") is None:
+                if p.get("published") is None and not include_automatic:
                     continue
                 out.append(HostPortBinding(
                     service=service_name,
-                    published=int(p["published"]),
-                    target=int(p.get("target", p["published"])),
+                    published=int(p["published"]) if p.get("published") is not None else None,
+                    target=int(p["target"]),
                     protocol=p.get("protocol", "tcp"),
                     host_ip=p.get("host_ip", "") or "",
                 ))
@@ -174,10 +180,16 @@ class PortConflict:
     owner: str   # human-readable description of what has the port
 
 
-def find_conflicts(bindings: list[HostPortBinding]) -> list[PortConflict]:
+def find_conflicts(
+    bindings: list[HostPortBinding], *, ignore_project: str | None = None,
+) -> list[PortConflict]:
     conflicts: list[PortConflict] = []
     for b in bindings:
+        if b.published is None:
+            continue  # Docker assigns an available ephemeral host port.
         owner = carthage_owner_of_port(b.published)
+        if owner and owner == ignore_project:
+            continue  # Compose can reuse its own project's existing published ports.
         if owner:
             conflicts.append(PortConflict(b, f"Carthage project '{owner}'"))
             continue
