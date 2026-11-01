@@ -14,6 +14,7 @@ from carthage import EXPECTED_BASE_IMAGE_TAG, PERSONAL_BASE_IMAGE_REPO, __versio
 from carthage.agents import agent_profiles_for
 from carthage import image
 from carthage.personal_config import PersonalConfig, PersonalImageFile
+from carthage.web import web_build_sources
 from carthage.daemon import runtime_ids
 
 
@@ -51,6 +52,11 @@ def require_project_personal_image(dockerfile: Path, tag: str) -> str:
 def personal_image_hash(*, base_image: str, config: PersonalConfig) -> str:
     payload = {
         "schema": 1,
+        "web_runtime": (
+            {name: hashlib.sha256(content).hexdigest()
+             for name, content in web_build_sources().items()}
+            if config.web is not None else None
+        ),
         "cli_version": __version__,
         # Bind-mounted agent state and credentials are owned by the host user.
         # Include the numeric identity so a personal image built on one host
@@ -175,6 +181,13 @@ def render_personal_image_dockerfile(base_image: str, config: PersonalConfig) ->
             "ENV IS_SANDBOX=1",
             "RUN sed -i 's|You are running as a non-root user (`carthage`).|You run as namespace UID/GID 0 (named carthage), mapped to the unprivileged host user. HOME remains /home/carthage; this does not grant host root access.|' /etc/carthage/SANDBOX.md",
         ]
+    if config.web is not None:
+        lines[1:1] = [
+            "FROM golang:1.26 AS carthage-web-builder",
+            "WORKDIR /build",
+            "COPY web/main.go web/ports.go web/go.mod ./",
+            'RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /carthage-web .',
+        ]
     image_packages = list(config.image.apt_packages)
     if config.image.terminfo_files and "ncurses-bin" not in image_packages:
         image_packages.append("ncurses-bin")
@@ -221,6 +234,12 @@ def render_personal_image_dockerfile(base_image: str, config: PersonalConfig) ->
         if profile.install_user != "root":
             lines.append("USER root")
 
+    if config.web is not None:
+        lines.extend([
+            "",
+            "COPY --from=carthage-web-builder /carthage-web /usr/local/bin/carthage-web",
+            "COPY --chmod=0755 web/entrypoint.sh /usr/local/bin/carthage-entrypoint",
+        ])
 
     lines.extend([
         "",
@@ -258,6 +277,10 @@ def build_personal_image(
         try:
             _copy_terminfo_files(context, config.image.terminfo_files)
             _copy_image_files(context, config.image.files)
+            if config.web is not None:
+                (context / "web").mkdir()
+                for name, content in web_build_sources().items():
+                    (context / "web" / name).write_bytes(content)
         except OSError as exc:
             return False, f"could not stage personal image file: {exc}"
         dockerfile = Path(tmp) / "Dockerfile"

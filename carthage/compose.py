@@ -70,6 +70,8 @@ def run(
     env_overrides: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess:
     base, remaining = _docker_compose_base(cfg, args)
+    if remaining and remaining[0] == "down" and "--remove-orphans" not in remaining:
+        remaining.append("--remove-orphans")
     cmd = base + remaining
     env = compose_env(cfg)
     if env_overrides:

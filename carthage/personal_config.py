@@ -22,12 +22,16 @@ else:  # pragma: no cover - fallback for 3.10
 
 from carthage.agents import supported_agent_kinds
 from carthage.runtime import RuntimeEnv, RuntimeMount, RuntimeOverlay
+from carthage.web import WebAccess, parse_web
 
 
 CURRENT_PERSONAL_SCHEMA_VERSION = 1
 MIN_READABLE_PERSONAL_SCHEMA_VERSION = 1
 PERSONAL_CONFIG_ENV = "CARTHAGE_PERSONAL_CONFIG"
 RESERVED_ENVIRONMENT_NAMES = frozenset({
+    "CARTHAGE_WEB_HOST",
+    "CARTHAGE_WEB_SERVER",
+    "CARTHAGE_WEB_SUPERVISE",
     "CARTHAGE",
     "CARTHAGE_PROJECT",
     "CARTHAGE_AGENT_BINARY",
@@ -92,6 +96,7 @@ class PersonalConfig:
     agents: PersonalAgents = field(default_factory=PersonalAgents)
     launch: PersonalLaunch = field(default_factory=PersonalLaunch)
     remotes: tuple[RemoteTarget, ...] = ()
+    web: WebAccess | None = None
 
     @property
     def runtime_overlay(self) -> RuntimeOverlay:
@@ -204,6 +209,8 @@ def load_personal_config(path: Path | None = None) -> PersonalConfigResult:
     warnings.extend(agent_warnings)
     warnings.extend(launch_warnings)
     warnings.extend(remote_warnings)
+    web_config, web_warnings = parse_web(data.get("web"), config_path)
+    warnings.extend(web_warnings)
 
     return PersonalConfigResult(
         PersonalConfig(
@@ -214,6 +221,7 @@ def load_personal_config(path: Path | None = None) -> PersonalConfigResult:
             agents=agents_config,
             launch=launch_config,
             remotes=remotes_config,
+            web=web_config,
         ),
         tuple(warnings),
         config_path,
@@ -243,6 +251,8 @@ def describe_personal_config(result: PersonalConfigResult) -> str:
         )
     if result.config.launch.command is not None:
         counts.append(f"launch: {result.config.launch.window or 'default'}")
+    if result.config.web:
+        counts.append(f"web: {result.config.web.domain}")
     if result.config.remotes:
         counts.append(f"{len(result.config.remotes)} remote(s)")
     suffix = f" ({', '.join(counts)})" if counts else ""

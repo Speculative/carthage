@@ -254,7 +254,64 @@ edit the inactive copy after a successful handoff.
 
 Carthage was Rome's great rival — an independent, walled city. Roman propaganda demanded *Carthago delenda est*: "Carthage must be destroyed." The name here is deliberately the opposite. Carthage containers *should* be destroyed — casually, frequently, per project, on a whim. The walls are the point. Reach for `carthage destroy` without fear.
 
-## Rootless Docker on Linux
+## Remote Ostraka web access through Lyoko
+
+Remote access is opt-in per host. With `[web]` configured, the personal-image
+build installs `carthage-web` and its startup entrypoint,
+including on older v2 base images. The personal image must also install an
+Ostraka binary with `ostraka web` support (for example through `[image].files`).
+Rebuild the personal and project images after enabling web access.
+
+Store the existing frps token in a host file readable by your container UID
+(`chmod 600 ~/.carthage/frp-token`), then add this once to your personal config (`~/.carthage/config.toml`):
+
+```toml
+[web]
+server_addr = "tunnel.speculative.tech"
+domain = "agents.speculative.tech"
+token_file = "~/.carthage/frp-token"
+supervise = false
+```
+
+This host-wide setting enables web access automatically for every project,
+including newly annexed projects. `carthage up` starts the router, Ostraka web
+listener in the `web-access` tmux window. The tunnel runs in a separate
+`carthage-frpc` service using `fatedier/frpc:v0.71.1`, with a read-only filesystem,
+no Linux capabilities, and no project or agent credential mounts. Only that
+service receives the tunnel token. It reaches the development router through a
+shared Unix socket; no host port is required. Use `docker logs` for tunnel logs.
+`carthage down` removes both containers. With
+`supervise = false`, the Ostraka TUI owns the supervisor. Set it to `true` for a
+web-only session, and use a shell or agent as your personal launch command so
+there is only one supervisor. Web startup initializes a missing project
+Ostraka store automatically.
+
+Visit `https://<slug>.agents.speculative.tech` for Ostraka, or
+`https://<port>-<slug>.agents.speculative.tech` for an HTTP dev server, including
+WebSockets. Dev servers can bind to localhost; the router translates Host to
+localhost to support their default host allowlists. Port 8090 is reserved for
+Ostraka; the router uses a private Unix socket. Unknown hosts and privileged ports are
+rejected. The router publishes no Docker ports.
+Use `[personal].disable = ["web"]` in a project to opt out.
+
+Lyoko must deploy its `web/deploy-agents.yaml` playbook and configure wildcard
+DNS for `*.agents.speculative.tech`. Its existing GitHub forward-auth middleware
+protects the portal and every container route; its `speculative.tech` cookie
+already covers these names. Dev-port hostnames use a numeric port followed by
+`-<slug>`, sharing the same wildcard certificate as the portal. The Lyoko
+gateway translates them into frps's per-container wildcard routes, so new
+projects and ports need no Lyoko configuration. Project slugs beginning with
+an integer followed by `-` are reserved for port routing.
+The portal lists online Carthage containers, their Ostraka workspaces, and
+automatically discovered listening TCP ports. It refreshes every 15 seconds.
+Port links support HTTP and WebSocket services; UDP is not listed.
+Stopping a project with `carthage down` also removes its tunnel. If the dev
+process crashes independently, a remaining tunnel returns an upstream error.
+Lyoko strips its `tf_sess_*` and `tf_state_*` cookies after forward authentication,
+and blocks applications from setting those reserved cookies. Application cookies
+continue to pass through.
+
+### Rootless Docker on Linux
 
 Install rootless Docker using the [Docker setup instructions](https://docs.docker.com/engine/security/rootless/),
 then select its context with `docker context use rootless`. `carthage up` detects
@@ -267,3 +324,5 @@ After migration, retire the unused rootful daemon and Docker group access if
 other workflows do not need them. Rootless Docker still shares the host kernel;
 it does not prevent an agent from changing files or credentials explicitly
 mounted into its container.
+
+Implementation follows the [remote access design in Notion](https://app.notion.com/p/407be87663c88125a455cfe23c1e0a66).

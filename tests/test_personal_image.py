@@ -393,3 +393,17 @@ def test_require_project_personal_image_rejects_published_base(tmp_path):
         assert "/carthage-annex --upgrade" in str(exc)
     else:
         raise AssertionError("expected PersonalImageRequiredError")
+
+
+def test_web_configuration_installs_runtime_and_changes_image_hash(tmp_path):
+    from carthage.web import WebAccess, web_build_sources
+
+    base = 'ghcr.io/speculative/carthage-base:v2'
+    configured = PersonalConfig(web=WebAccess('tunnel.example.com', 'agents.example.com', str(tmp_path/'token')))
+    plain = PersonalConfig()
+    assert personal_image_hash(base_image=base, config=configured) != personal_image_hash(base_image=base, config=plain)
+    dockerfile = render_personal_image_dockerfile(base, configured)
+    assert 'FROM golang:1.26 AS carthage-web-builder' in dockerfile
+    assert 'frpc' not in dockerfile
+    assert 'COPY --chmod=0755 web/entrypoint.sh /usr/local/bin/carthage-entrypoint' in dockerfile
+    assert set(web_build_sources()) == {'main.go', 'ports.go', 'go.mod', 'entrypoint.sh'}

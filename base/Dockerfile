@@ -22,6 +22,12 @@
 #     from the host's LAN; see README "Security model" for what we do and do not
 #     defend against.
 
+FROM golang:1.26 AS web-builder
+WORKDIR /build
+COPY web/ ./
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /carthage-web .
+
+
 FROM ubuntu:24.04
 
 ARG HOST_UID=1000
@@ -136,6 +142,7 @@ RUN mkdir -p /commandhistory \
 # --- Sandbox-awareness doc -------------------------------------------------
 RUN mkdir -p /etc/carthage
 COPY SANDBOX.md /etc/carthage/SANDBOX.md
+COPY --from=web-builder /carthage-web /usr/local/bin/carthage-web
 COPY entrypoint.sh /usr/local/bin/carthage-entrypoint
 RUN chmod 0755 /usr/local/bin/carthage-entrypoint \
  && chmod 0644 /etc/carthage/SANDBOX.md

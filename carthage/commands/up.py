@@ -10,6 +10,7 @@ run, and `--port HOST:CONTAINER` adds a one-off override.
 from __future__ import annotations
 
 import os
+import json
 import shutil
 import subprocess
 import sys
@@ -128,6 +129,13 @@ def up(force_rebuild: bool, offline: bool, no_host_ports: bool, port_overrides: 
         console.print(f"[red]error:[/red] {exc}")
         sys.exit(2)
 
+    # Validate remote ingress before pulling or building anything.
+    try:
+        if personal.config.web and "web" not in cfg.personal_disabled:
+            personal.config.web.runtime_overlay(cfg.project_slug)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+
     # --- Refresh base image so digest drift is visible to the hash check ---
     # `compute_expected_hash` reads the base image's digest from the local
     # cache; without this pull, an upstream `:vN` rebuild looks like a no-op
@@ -232,16 +240,22 @@ def up(force_rebuild: bool, offline: bool, no_host_ports: bool, port_overrides: 
     for profile in agent_profiles_for(personal.config.agents.installed):
         cfg.agent_state_dir(profile.kind).mkdir(parents=True, exist_ok=True)
 
+    if personal.config.web and "web" not in cfg.personal_disabled:
+        personal.config.web.prepare(cfg.project_slug)
+
     # --- Start ---
     env_overrides = _resolve_runtime_env(cfg, offline=offline)
     console.print(f"[cyan]starting[/cyan] service '{cfg.service_name}'…")
     try:
-        compose.run(cfg, compose_args + ["up", "-d"], env_overrides=env_overrides)
+        compose.run(cfg, compose_args + ["up", "-d", "--remove-orphans"], env_overrides=env_overrides)
     except subprocess.CalledProcessError as exc:
         cleanup()
         console.print(f"[red]compose up failed[/red] (exit {exc.returncode})")
         sys.exit(exc.returncode)
     cleanup()
+
+    if personal.config.web and "web" not in cfg.personal_disabled:
+        console.print(f"web: https://{cfg.project_slug}.{personal.config.web.domain}")
 
     console.print(f"[green]ready.[/green] attach with: [bold]carthage attach[/bold]")
 
@@ -297,9 +311,8 @@ def _build_compose_args(
 ) -> tuple[list[str], callable]:
     """Return (extra compose args, cleanup fn).
 
-    Without port mutations, this is simply `([], lambda: None)`. With
-    mutations, we generate an override compose file via `tempfile` and point
-    compose at it with `-f`. The cleanup fn deletes that temp file.
+    Runtime settings and loopback-only port bindings are applied through
+    temporary override files. The cleanup function removes those files.
 
     `--port HOST:CONTAINER` semantics: replace any existing entry that targets
     the same container port. `--port 5174:5173` on a project that publishes
@@ -359,12 +372,22 @@ def _personal_compose_override_content(
         launch_window=launch.window if launch.configured else None,
     )
     personal_overlay = filter_disabled_overlay(personal.config.runtime_overlay, disabled)
+    web_overlay = (
+        personal.config.web.runtime_overlay(cfg.project_slug)
+        if personal.config.web and "web" not in disabled else None
+    )
     overlay = merge_overlays(
         personal_overlay,
+        *(item for item in (web_overlay,) if item is not None),
         *agent_mount_overlays,
         *(item for item in (agent_launch_overlay,) if item is not None),
     )
-    return render_compose_overlay(cfg.service_name, overlay)
+    content = render_compose_overlay(cfg.service_name, overlay)
+    if web_overlay is not None:
+        document = json.loads(content)
+        document["services"].update(personal.config.web.sidecar(cfg.project_slug, cfg.service_name))
+        return json.dumps(document, indent=2) + "\n"
+    return content
 
 
 def _port_compose_override_content(

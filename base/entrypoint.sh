@@ -29,6 +29,12 @@ if [ "${CARTHAGE_AGENT_AUTO_UPDATE:-0}" = "1" ] && [ -n "${agent_update_command}
     fi
 fi
 
+# Initialize before opening an Ostraka TUI so it can own the supervisor without
+# stopping at its first-project prompt. The web process also handles restarts.
+if [ -n "${CARTHAGE_WEB_HOST:-}" ] && [ ! -d .ostraka ]; then
+    ostraka init
+fi
+
 # --- tmux session for the configured agent ---------------------------------
 # Agent auto-approval flags are appropriate here because the sandbox *is* the
 # permission boundary — prompting inside adds no safety.
@@ -51,6 +57,13 @@ fi
 if tmux list-windows -t "${tmux_session}" -F '#{window_name}' \
         | grep -Fx -- "${agent_window}" >/dev/null; then
     tmux select-window -t "${tmux_session}:${agent_window}"
+fi
+
+# Remote ingress shares this container's loopback, so localhost-only dev servers
+# work too. A tmux window keeps logs visible and retries failed child processes.
+if [ -n "${CARTHAGE_WEB_HOST:-}" ] && ! tmux list-windows -t "${tmux_session}" -F '#{window_name}' | grep -Fx web-access >/dev/null; then
+    tmux new-window -d -t "${tmux_session}:" -n web-access \
+        'bash -c "while true; do carthage-web; sleep 3; done"'
 fi
 
 # --- Exec the CMD ----------------------------------------------------------

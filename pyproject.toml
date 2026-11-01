@@ -34,10 +34,14 @@ packages = ["carthage"]
 # They end up at `carthage/_skills/<name>/` inside the installed package.
 [tool.hatch.build.targets.wheel.force-include]
 "skill" = "carthage/_skills"
+"base/web" = "carthage/_web"
+"base/entrypoint.sh" = "carthage/_web/entrypoint.sh"
 
 [tool.hatch.build.targets.sdist]
 include = [
     "carthage/",
+    "base/web/",
+    "base/entrypoint.sh",
     "skill/",
     "README.md",
     "pyproject.toml",

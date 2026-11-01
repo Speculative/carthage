@@ -349,3 +349,34 @@ def test_agent_auto_update_env_tracks_offline_flag(tmp_path):
 
     assert online["CARTHAGE_AGENT_AUTO_UPDATE"] == "1"
     assert offline["CARTHAGE_AGENT_AUTO_UPDATE"] == "0"
+
+
+def test_web_overlay_and_project_opt_out(tmp_path):
+    _write_project(tmp_path)
+    personal_path = tmp_path / 'personal.toml'
+    _write_personal(personal_path)
+    token = tmp_path / 'token'
+    token.write_text('fake-token')
+    with personal_path.open('a') as f:
+        f.write(f'\n[web]\nserver_addr = "tunnel.example.com"\ndomain = "agents.example.com"\ntoken_file = "{token}"\n')
+    personal = load_personal_config(personal_path)
+    cfg = load_config(tmp_path)
+    args, cleanup = _build_compose_args(cfg, True, [], personal)
+    try:
+        service = json.loads(Path(args[4]).read_text())['services']['dev']
+        assert service['environment']['CARTHAGE_WEB_HOST'] == 'demo.agents.example.com'
+        assert all(v['target'] != '/run/carthage-frp-token' for v in service['volumes'])
+        sidecar = json.loads(Path(args[4]).read_text())['services']['carthage-frpc']
+        assert any(v['target'] == '/run/carthage-frp-token' and v['read_only'] for v in sidecar['volumes'])
+    finally:
+        cleanup()
+    with (tmp_path / '.carthage/config.toml').open('a') as f:
+        f.write('\n[personal]\ndisable = ["web"]\n')
+    cfg = load_config(tmp_path)
+    args, cleanup = _build_compose_args(cfg, False, [], personal)
+    try:
+        service = json.loads(Path(args[-1]).read_text())['services']['dev']
+        assert 'CARTHAGE_WEB_HOST' not in service['environment']
+        assert all(v['target'] != '/run/carthage-frp-token' for v in service['volumes'])
+    finally:
+        cleanup()
