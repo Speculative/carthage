@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # carthage-entrypoint — PID 1 inside every Carthage container.
 #
-# Runs as the `carthage` user (the image sets `USER carthage` so we never need
-# root at runtime). Starts a detached tmux server with the configured agent so
+# Runs as the `carthage` user, mapped to the unprivileged host account under
+# rootless Docker. Starts a detached tmux server with the configured agent so
 # `carthage attach` always has something to attach to. Finally execs the
 # container CMD (default: `sleep infinity`).
 #

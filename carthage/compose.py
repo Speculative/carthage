@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Sequence
 
 from carthage.config import CarthageConfig
+from carthage.daemon import runtime_ids
 
 
 _EXTRA_F_SEQUENCE_SENTINEL = "--extra-f-sequence"
@@ -53,8 +54,9 @@ def _docker_compose_base(cfg: CarthageConfig, args: Sequence[str]) -> tuple[list
 
 def compose_env(cfg: CarthageConfig) -> dict[str, str]:
     env = os.environ.copy()
-    env.setdefault("HOST_UID", str(os.getuid()))
-    env.setdefault("HOST_GID", str(os.getgid()))
+    uid, gid = runtime_ids()
+    env.setdefault("HOST_UID", str(uid))
+    env.setdefault("HOST_GID", str(gid))
     env.setdefault("HOST_HOME", str(Path.home()))
     return env
 

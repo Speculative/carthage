@@ -1,4 +1,5 @@
 import os
+import pytest
 from pathlib import Path
 
 from carthage.personal_config import PersonalAgents, PersonalConfig, PersonalImage, PersonalImageFile
@@ -13,6 +14,13 @@ from carthage.personal_image import (
     render_personal_image_dockerfile,
     require_project_personal_image,
 )
+
+
+@pytest.fixture(autouse=True)
+def rootful_identity(monkeypatch):
+    # Unit tests specify the daemon identity; the developer's active context
+    # must not change Dockerfile expectations or introduce real Docker calls.
+    monkeypatch.setattr("carthage.daemon.docker_security_options", lambda: ())
 
 
 def test_personal_image_ref_defaults_to_expected_tag():

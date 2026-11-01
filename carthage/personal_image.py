@@ -14,6 +14,7 @@ from carthage import EXPECTED_BASE_IMAGE_TAG, PERSONAL_BASE_IMAGE_REPO, __versio
 from carthage.agents import agent_profiles_for
 from carthage import image
 from carthage.personal_config import PersonalConfig, PersonalImageFile
+from carthage.daemon import runtime_ids
 
 
 PERSONAL_IMAGE_HASH_LABEL = "org.carthage.personal-image-hash"
@@ -54,8 +55,9 @@ def personal_image_hash(*, base_image: str, config: PersonalConfig) -> str:
         # Bind-mounted agent state and credentials are owned by the host user.
         # Include the numeric identity so a personal image built on one host
         # is not incorrectly reused on another host with different IDs.
-        "host_uid": os.getuid(),
-        "host_gid": os.getgid(),
+        "host_uid": runtime_ids()[0],
+        "host_gid": runtime_ids()[1],
+        "identity_mapping": "rootless" if runtime_ids() == (0, 0) and os.getuid() != 0 else "host",
         "base_image": base_image,
         "agents": [
             {
@@ -163,6 +165,16 @@ def render_personal_image_dockerfile(base_image: str, config: PersonalConfig) ->
         "    fi; \\",
         "    chown -R carthage:carthage /home/carthage /commandhistory",
     ]
+    if runtime_ids() == (0, 0) and os.getuid() != 0:
+        start = lines.index("RUN set -eux; \\")
+        lines[start:] = [
+            "RUN groupmod -o --gid 0 carthage \\",
+            " && usermod -o --uid 0 --gid 0 carthage \\",
+            " && chown -R carthage:carthage /home/carthage /commandhistory",
+            "ENV HOME=/home/carthage",
+            "ENV IS_SANDBOX=1",
+            "RUN sed -i 's|You are running as a non-root user (`carthage`).|You run as namespace UID/GID 0 (named carthage), mapped to the unprivileged host user. HOME remains /home/carthage; this does not grant host root access.|' /etc/carthage/SANDBOX.md",
+        ]
     image_packages = list(config.image.apt_packages)
     if config.image.terminfo_files and "ncurses-bin" not in image_packages:
         image_packages.append("ncurses-bin")
@@ -209,6 +221,7 @@ def render_personal_image_dockerfile(base_image: str, config: PersonalConfig) ->
         if profile.install_user != "root":
             lines.append("USER root")
 
+
     lines.extend([
         "",
         "USER carthage",
@@ -251,8 +264,8 @@ def build_personal_image(
         dockerfile.write_text(render_personal_image_dockerfile(base_image, config))
         args = [
             "docker", "build", "-t", target_image, "-f", str(dockerfile),
-            "--build-arg", f"HOST_UID={os.getuid()}",
-            "--build-arg", f"HOST_GID={os.getgid()}",
+            "--build-arg", f"HOST_UID={runtime_ids()[0]}",
+            "--build-arg", f"HOST_GID={runtime_ids()[1]}",
         ]
         if no_cache:
             args.append("--no-cache")

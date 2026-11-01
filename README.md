@@ -11,7 +11,7 @@ It is three cooperating pieces: a published base image (`ghcr.io/speculative/car
 The main tmux window can launch a personal application instead of an agent
 directly. Agent CLIs remain installed and available to that application.
 
-The design goal is that `--dangerously-skip-permissions` is reasonable inside Carthage because the sandbox itself supplies meaningful boundaries: non-root user with a narrow capability set, no `sudo`, no Docker socket, `no-new-privileges`, tight mount scoping, ephemeral lifecycle. Prompt fatigue goes away; trust is anchored at what the container *can't* do.
+The design goal is that `--dangerously-skip-permissions` is reasonable inside Carthage because the sandbox itself supplies meaningful boundaries: a scoped container user with a narrow capability set, no `sudo`, no Docker socket, `no-new-privileges`, tight mount scoping, ephemeral lifecycle. Prompt fatigue goes away; trust is anchored at what the container *can't* do.
 
 ## Installation
 
@@ -62,7 +62,13 @@ carthage attach   # drops you into a tmux session with the configured agent runn
 
 ### What *is* enforced
 
-- **Non-root user (`carthage`) matching host UID/GID.** File writes to bind-mounted `/workspace` get sane ownership on the host.
+- **Container user mapped to the host user.** With rootful Docker, `carthage`
+  matches your host UID/GID. With rootless Docker, namespace UID/GID 0 maps to
+  your unprivileged host account. The personal image uses that mapping so
+  project files, agent credentials, and explicitly mounted directories stay
+  writable with your normal host ownership. Namespace root is not host root.
+  Claude receives `IS_SANDBOX=1` in the rootless personal image so unattended
+  launches continue to work.
 - **Narrow Linux capabilities.** `cap_drop: [ALL]` then `cap_add: [CHOWN, SETUID, SETGID, DAC_OVERRIDE]`. No `SYS_ADMIN`, no `NET_ADMIN`, no `SYS_PTRACE`. Projects that need `SYS_PTRACE` (gdb/strace/perf) opt in during annex; the annex skill asks.
 - **`no-new-privileges`.** Setuid binaries can't gain privilege. No `sudo` is installed.
 - **No Docker socket.** `/var/run/docker.sock` is never mounted. The container can't start sibling containers or escape via the daemon.
@@ -74,9 +80,9 @@ carthage attach   # drops you into a tmux session with the configured agent runn
 
 ### What is **not** enforced
 
-- **Host-LAN isolation.** Carthage does *not* firewall off RFC1918 addresses. If the host can reach `192.168.1.1`, the container can too. Earlier iterations shipped an iptables-based lockdown; it was dropped because it added `NET_ADMIN` capability in exchange for defense-in-depth that doesn't pull its weight for this threat model (the actually-load-bearing properties are non-root + cap drops + no-sudo + no-socket + scoped mounts + ephemeral lifecycle). If a specific project needs LAN isolation, add `NET_ADMIN` and `iptables` rules in its `.carthage/Dockerfile` / compose file.
+- **Host-LAN isolation.** Carthage does *not* firewall off RFC1918 addresses. If the host can reach `192.168.1.1`, the container can too. Earlier iterations shipped an iptables-based lockdown; it was dropped because it added `NET_ADMIN` capability in exchange for defense-in-depth that doesn't pull its weight for this threat model (the boundaries include user identity + cap drops + no-sudo + no-socket + scoped mounts + ephemeral lifecycle). If a specific project needs LAN isolation, add `NET_ADMIN` and `iptables` rules in its `.carthage/Dockerfile` / compose file.
 - **Read-only rootfs.** Too much friction with dev tooling (compilers, installers, pip/npm caches). Not enabled in v2; may revisit.
-- **User namespace remapping.** Conflicts with the host-UID-matching design.
+- **Rootful daemon user namespace remapping.** Not configured automatically. Rootless Docker is supported with the identity mapping described above.
 - **Ports by default.** Sidecars (Postgres, Redis, etc.) are internal-only — the `dev` container reaches them via Docker DNS (`redis:6379`, etc.), and nothing is bound on the host. Host-side ports for local browser testing are explicit opt-in during `/carthage-annex`.
 
 ## Versioning and upgrading
@@ -186,10 +192,11 @@ installed or which agent credentials are mounted. Newly annexed projects
 inherit from this local personal image. Re-run `carthage fortify` after changing
 `[image]`, `[launch]`, or adding a new installed agent. Generate a Ghostty source file with
 `mkdir -p ~/.carthage/terminfo && infocmp -x xterm-ghostty > ~/.carthage/terminfo/xterm-ghostty`.
-The personal image also remaps its `carthage` user to the host's numeric
-UID/GID, so bind-mounted agent state remains writable on hosts whose IDs differ
-from the published base image. Re-run `carthage fortify --rebuild-personal`
-after upgrading the CLI on such a host.
+The personal image maps its `carthage` user to the host account: matching
+UID/GID with rootful Docker, or namespace UID/GID 0 with rootless Docker.
+Bind-mounted source, credentials, and agent state remain writable with normal
+host ownership. `carthage up` rebuilds the personal image when this mapping
+changes.
 
 When `[launch]` is absent, the default agent profile controls the main tmux
 window. With `[launch]` configured, switching between already installed agent
@@ -244,3 +251,17 @@ edit the inactive copy after a successful handoff.
 ## The name
 
 Carthage was Rome's great rival — an independent, walled city. Roman propaganda demanded *Carthago delenda est*: "Carthage must be destroyed." The name here is deliberately the opposite. Carthage containers *should* be destroyed — casually, frequently, per project, on a whim. The walls are the point. Reach for `carthage destroy` without fear.
+
+## Rootless Docker on Linux
+
+Install rootless Docker using the [Docker setup instructions](https://docs.docker.com/engine/security/rootless/),
+then select its context with `docker context use rootless`. `carthage up` detects
+the daemon, rebuilds the personal image when its identity mapping differs, and
+starts projects normally. Images and named volumes belong to the selected
+Docker daemon; existing bind-mounted source and agent state stay in place.
+Use `systemctl --user enable --now docker` to start the user service on login.
+For startup before login, enable lingering with `sudo loginctl enable-linger "$USER"`.
+After migration, retire the unused rootful daemon and Docker group access if
+other workflows do not need them. Rootless Docker still shares the host kernel;
+it does not prevent an agent from changing files or credentials explicitly
+mounted into its container.

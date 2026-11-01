@@ -5,7 +5,10 @@ the rules of the sandbox so you don't waste effort working around them.
 
 ## What *is* isolated
 
-- You are running as a non-root user (`carthage`).
+- The `carthage` account maps to the invoking host user. With rootful Docker
+  it has the host UID/GID. With rootless Docker it has namespace UID/GID 0,
+  which maps to the unprivileged host account. Seeing UID 0 inside a rootless
+  container does not grant host root access. `$HOME` remains `/home/carthage`.
 - Most Linux capabilities are dropped (only `CHOWN`, `SETUID`, `SETGID`,
   `DAC_OVERRIDE` are retained; no `SYS_ADMIN`, no `NET_ADMIN`, no `SYS_PTRACE`
   by default).
